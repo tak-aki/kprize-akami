@@ -12,8 +12,8 @@
 
 ## submit手順
 1. 変更したcodesをデータセットに反映するために、./codesにて以下コマンドを実行  
-`codes % kaggle d version -m 'update' -r zip`
+`kaggle d version -m 'update' -r zip`
 2. submitに必要なライブラリに変更がある場合は、./deps/kprize-akami-deps.ipyngを編集し、./depsにて以下コマンドを実行  
-`deps % kaggle k push`
+`kaggle k push`
 2. submit notebookをアップ・実行するために、./subにて以下コマンドを実行  
-`sub % kaggle k push`
+`kaggle k push`

@@ -1,0 +1,19 @@
+{
+  "id": "mtfall/kprize-akami-sub",
+  "title": "kprize-akami-sub",
+  "code_file": "kprize-akami-sub.ipynb",
+  "language": "python",
+  "kernel_type": "notebook", 
+  "is_private": "true",
+  "enable_gpu": "false",
+  "enable_tpu": "false",
+  "enable_internet": "false",
+  "dataset_sources": [
+    "mtfall/kprize-akami-codes"
+  ],
+  "competition_sources": [
+    "konwinski-prize"
+  ],
+  "kernel_sources": [],
+  "model_sources": []
+}

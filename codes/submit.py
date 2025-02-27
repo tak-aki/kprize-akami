@@ -1,13 +1,13 @@
 import io
 import os
 import re
-import shutil
 import subprocess
 import time
 import warnings
 from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
+import torch
 import unidiff
 
 # https://www.kaggle.com/competitions/ai-mathematical-olympiad-progress-prize-2/discussion/560682#3113134
@@ -22,13 +22,16 @@ warnings.simplefilter("ignore")
 
 
 ## Initialize LLM
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 if os.getenv("KAGGLE_KERNEL_RUN_TYPE") or os.getenv("KAGGLE_IS_COMPETITION_RERUN"):
     llm_model_pth: str = "/kaggle/input/deepseek-r1/transformers/deepseek-r1-distill-qwen-32b-awq/1"
+    num_gpus: int = 4
 else:
-    llm_model_pth: str = ""  # Add your local model path here
+    llm_model_pth: str = "inarikami/DeepSeek-R1-Distill-Qwen-32B-AWQ"
+    num_gpus: int = torch.cuda.device_count()
+
+os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, range(num_gpus)))
 
 BATCH_SIZE: int = 6
 VALIDATION_COPY_COUNT: int = 1
@@ -42,7 +45,7 @@ llm: LLM = LLM(
     max_num_seqs=MAX_NUM_SEQS,  # Maximum number of sequences per iteration. Default is 256
     max_model_len=MAX_MODEL_LEN,  # Model context length
     trust_remote_code=True,  # Trust remote code (e.g., from HuggingFace) when downloading the model and tokenizer
-    tensor_parallel_size=4,  # The number of GPUs to use for distributed execution with tensor parallelism
+    tensor_parallel_size=num_gpus,  # The number of GPUs to use for distributed execution with tensor parallelism
     gpu_memory_utilization=0.95,  # The ratio (between 0 and 1) of GPU memory to reserve for the model
     seed=2024,
 )
@@ -652,13 +655,7 @@ def predict_inner(
     if skip_prediction:
         return None
 
-    with open("repo_archive.tar", "wb") as f:
-        f.write(repo_archive.read())
     directory: str = REPO_PATH
-    if os.path.exists(directory):
-        shutil.rmtree(directory)
-    shutil.unpack_archive("repo_archive.tar", extract_dir=directory)
-    os.remove("repo_archive.tar")
 
     directory_string = stringify_directory(directory)
 
@@ -705,7 +702,6 @@ def predict_inner(
         data["score"] = scores
 
         pd.DataFrame(data).to_csv(f"{str(int(time.time() - start_time)).zfill(5)}.csv", index=False)
-    shutil.rmtree(directory)
 
     print("submitted patch_string")
     print(patch_string)

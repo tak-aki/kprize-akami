@@ -5,7 +5,7 @@
   "language": "python",
   "kernel_type": "notebook", 
   "is_private": "true",
-  "enable_gpu": "false",
+  "enable_gpu": "true",
   "enable_tpu": "false",
   "enable_internet": "false",
   "dataset_sources": [
@@ -17,5 +17,7 @@
   "kernel_sources": [
     "mtfall/kprize-akami-deps"
   ],
-  "model_sources": []
+  "model_sources": [
+    "shelterw/deepseek-r1/transformers/deepseek-r1-distill-qwen-32b-awq/1"
+  ]
 }

@@ -4,6 +4,7 @@ import re
 import subprocess
 import time
 import warnings
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
@@ -527,11 +528,11 @@ def patch_dry_run_succeeds(patch_string: str, repo_path: str = REPO_PATH, timeou
         repo_path: Path to the directory to be patched.
         timeout: Number of seconds before the dry run will be cancelled.
     """
-    with open("patch.txt", "w") as f:
+    patch_path = Path("patch.txt").resolve()
+    with patch_path.open("w") as f:
         f.write(patch_string)
-    patch_path = "/kaggle/working/patch.txt"
 
-    cmd = f"patch --quiet --dry-run -p1 -i {patch_path} -d {repo_path}"
+    cmd = f"patch --quiet --dry-run -p1 -i {str(patch_path)} -d {repo_path}"
     try:
         subprocess.run(cmd, shell=True, check=True, timeout=timeout)
         return True
@@ -644,6 +645,7 @@ def predict_inner(
     pip_packages_archive: io.BytesIO,
     env_setup_cmds_templates: list[str],
     skip_prediction: bool = False,
+    save_result: bool = True,
 ) -> str:
     """
     Args:
@@ -701,7 +703,8 @@ def predict_inner(
         data["judgment_count_true"] = [judgments.count(True) for judgments in judgments_aggregated]
         data["score"] = scores
 
-        pd.DataFrame(data).to_csv(f"{str(int(time.time() - start_time)).zfill(5)}.csv", index=False)
+        if save_result:
+            pd.DataFrame(data).to_csv(f"{str(int(time.time() - start_time)).zfill(5)}.csv", index=False)
 
     print("submitted patch_string")
     print(patch_string)

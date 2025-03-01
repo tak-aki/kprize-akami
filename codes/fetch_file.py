@@ -13,7 +13,7 @@ def fetch_file_from_line(file_lines: list[Tuple[str, int]], context_lines: int =
 
         for relative_path, line_idx in file_lines:
             path = os.path.join(REPO_PATH, relative_path)
-            if not os.path.isfile(path):
+            if not os.path.isfile(path) or type(line_idx) is not int:
                 print("no", path)
                 continue
 

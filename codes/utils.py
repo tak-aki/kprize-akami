@@ -71,6 +71,9 @@ def extract_file_and_error_lines(file_paths: List[str], problem_statement: str) 
             line_number = int(line_str) if line_str is not None else None
             results.append((fp, line_number))
 
+    # line_number が None のものを削除
+    results = [(fp, ln) for fp, ln in results if ln is not None]
+
     return list(set(results))
 
 

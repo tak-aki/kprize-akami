@@ -91,7 +91,7 @@ def fetch_file_from_line(file_lines: list[Tuple[str, int]], context_lines: int =
 
     # For each file
     for (filepath, line), snippet_list in zip(file_lines, merged_snips):
-        output.write(f"[file name]: {filepath[len(REPO_PATH) + 1 :]} [stated line]: {line}\n")
+        output.write(f"[file name]: {filepath} [stated line]: {line}\n")
         output.write("[file content begin]\n")
         if not snippet_list:
             output.write("  No matches found.\n")

@@ -26,6 +26,7 @@ def predict_inner(
     env_setup_cmds_templates: list[str],
     skip_prediction: bool = False,
     save_result: bool = True,
+    max_file_lines: int = 5,
 ) -> str:
     """
     Args:
@@ -43,7 +44,7 @@ def predict_inner(
     relative_paths = walk_directory(directory)
     file_lines = extract_file_and_error_lines(relative_paths, problem_statement)
     print(f"{file_lines=}")
-    if len(file_lines) == 0:
+    if len(file_lines) <= 0 or max_file_lines < len(file_lines):
         return None
 
     file_content_string = fetch_file_from_line(file_lines)

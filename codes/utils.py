@@ -128,18 +128,6 @@ def is_valid_patch_format(patch_string: str) -> bool:
         return False
 
 
-def patch_dry_run_succeeds(patch_string: str, repo_path: str, timeout: int = 60) -> bool:
-    patch_path = Path("patch.txt").resolve()
-    with patch_path.open("w") as f:
-        f.write(patch_string)
-    cmd = f"patch --quiet --dry-run -p1 -i {str(patch_path)} -d {repo_path}"
-    try:
-        subprocess.run(cmd, shell=True, check=True, timeout=timeout)
-        return True
-    except Exception:
-        return False
-
-
 def save_results(data: dict, start_time: float):
     filename = f"{str(int(time.time() - start_time)).zfill(5)}.csv"
     pd.DataFrame(data).to_csv(filename, index=False)

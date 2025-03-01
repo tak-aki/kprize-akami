@@ -136,7 +136,7 @@ def patch_dry_run_succeeds(patch_string: str, repo_path: str, timeout: int = 60)
     try:
         subprocess.run(cmd, shell=True, check=True, timeout=timeout)
         return True
-    except subprocess.CalledProcessError:
+    except Exception:
         return False
 
 

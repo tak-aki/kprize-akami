@@ -102,7 +102,7 @@ def extract_file_query(xml_content: str) -> Dict[str, List[str]]:
 
                 # Store in a dictionary: { filepath: [search_strings...] }
                 parsed_data[filepath_text] = search_strings  # type: ignore
-        except:
+        except Exception:
             print("Error parsing output")
             print(xml_content)
             return {}
@@ -650,7 +650,8 @@ def predict_inner(
     """
     Args:
         problem_statement: The text of the git issue.
-        repo_path: A BytesIO buffer path with a .tar containing the codebase that must be patched. The gateway will make this directory available immediately before this function runs.
+        repo_path: A BytesIO buffer path with a .tar containing the codebase that must be patched.
+            The gateway will make this directory available immediately before this function runs.
         pip_packages_archive: A BytesIO buffer path with a .tar containing the wheel files necessary for running unit tests.
         env_setup_cmds_templates: Commands necessary for installing the pip_packages_archive.
     """

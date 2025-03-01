@@ -1,4 +1,3 @@
-import json
 import logging
 import shutil
 import time
@@ -7,7 +6,7 @@ from pathlib import Path
 
 from codes.submit import REPO_PATH, predict_inner
 from local.src.setup import setup_data, setup_demo_environment
-from local.src.utils import SWEBenchInstance
+from local.src.utils import SWEBenchInstance, capture_stdout, save_json
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -36,6 +35,7 @@ def main():
     swe_bench_data = swe_bench_data[:num_instances]
 
     output_dir = Path("output/")
+    shutil.rmtree(output_dir, ignore_errors=True)
     output_dir.mkdir(exist_ok=True)
 
     logger.info("Start running the predictor.")
@@ -48,30 +48,48 @@ def main():
         instance = SWEBenchInstance.from_df_row(data)
         shutil.rmtree(REPO_PATH, ignore_errors=True)
 
+        logger.info("-----------------------------------------------------------------------------")
+        logger.info(f"*** Current result: {n_corrent} correct, {n_wrong} wrong, {n_skipped} skipped. ***")
+        logger.info("-----------------------------------------------------------------------------")
+
         # Setup
         logger.info(f"Setting up the environment for {instance.instance_id}.")
         env = setup_demo_environment(instance, REPO_PATH)
 
         # Predict the patch
         logger.info(f"Predicting the patch for {instance.instance_id}.")
-        patch = predict_inner(
-            instance.problem_statement,
-            repo_archive=None,
-            pip_packages_archive=None,
-            env_setup_cmds_templates=None,
-            skip_prediction=False,
-            save_result=False,
-        )
 
-        if patch is None:
-            n_skipped += 1
-            continue
+        with capture_stdout() as buffer:
+            patch = predict_inner(
+                instance.problem_statement,
+                repo_archive=None,
+                pip_packages_archive=None,
+                env_setup_cmds_templates=None,
+                skip_prediction=False,
+                save_result=False,
+            )
 
         result_dir = output_dir / instance.instance_id
         result_dir.mkdir(exist_ok=True)
+        result_path = result_dir / "result.json"
 
-        with open(result_dir / "patch.txt", "w") as f:
-            f.write(patch)
+        captured_output = buffer.getvalue().strip()
+        with open(result_dir / "log.txt", "w") as f:
+            f.write(captured_output)
+
+        result = {
+            "instance_id": instance.instance_id,
+            "status": "skipped",
+            "success_count": 0,
+            "n_tests": len(instance.fail_to_pass + instance.pass_to_pass),
+            "patch": patch,
+            "test_results": [],
+        }
+
+        if patch is None:
+            n_skipped += 1
+            save_json(result, result_path)
+            continue
 
         # Test
         logger.info(f"Testing the patch for {instance.instance_id}.")
@@ -81,21 +99,28 @@ def main():
         except Exception as e:
             logger.error(f"Failed to apply the patch for {instance.instance_id}.")
             logger.error(e)
+
             n_wrong += 1
+            result["status"] = "wrong"
+            save_json(result, result_path)
             continue
 
         env.apply_patch(instance.test_patch)
-        test_results = [env.run_pytest(test) for test in instance.fail_to_pass + instance.pass_to_pass]
+        test_results = [asdict(env.run_pytest(test)) for test in instance.fail_to_pass + instance.pass_to_pass]
+        success_count = sum([result["returncode"] == 0 for result in test_results])
+        status = "correct" if success_count == len(test_results) else "wrong"
 
-        if all([result.success for result in test_results]):
+        if status == "correct":
             logger.info(f"Patch for {instance.instance_id} is correct.")
             n_corrent += 1
         else:
-            logger.info(f"Patch for {instance.instance_id} is wrong.")
+            logger.info(f"Patch for {instance.instance_id} is wrong. {success_count}/{len(test_results)} tests passed.")
             n_wrong += 1
 
-        with open(result_dir / "result.json", "w") as f:
-            json.dump([asdict(result) for result in test_results], f, indent=4)
+        result["status"] = status
+        result["success_count"] = success_count
+        result["test_results"] = test_results
+        save_json(result, result_path)
 
     shutil.rmtree(REPO_PATH, ignore_errors=True)
 

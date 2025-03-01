@@ -1,8 +1,10 @@
+import io
 import json
 import logging
 import os
 import re
 import subprocess
+import sys
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
@@ -360,3 +362,40 @@ def extract_updated_tests(diff_text: str) -> list[str]:
             test_identifiers.add(file_path)
 
     return sorted(list(test_identifiers))
+
+
+class DualOutput:
+    def __init__(self, original_stdout):
+        self.original_stdout = original_stdout
+        self.buffer = io.StringIO()
+
+    def write(self, message):
+        self.original_stdout.write(message)
+        self.buffer.write(message)
+
+    def flush(self):
+        self.original_stdout.flush()
+        self.buffer.flush()
+
+
+@contextmanager
+def capture_stdout():
+    original_stdout = sys.stdout
+    dual_output = DualOutput(original_stdout)
+    sys.stdout = dual_output
+
+    try:
+        yield dual_output.buffer
+    finally:
+        sys.stdout = original_stdout
+
+
+def save_json(data: Any, path: str | Path) -> None:
+    """Save data to a JSON file.
+
+    Args:
+        data: The data to save.
+        path (str | Path): The path to the JSON file.
+    """
+    with open(path, "w") as f:
+        json.dump(data, f, indent=4)

@@ -1,11 +1,10 @@
 import json
 import logging
+import os
+import subprocess
 from pathlib import Path
 
 from datasets import load_dataset, load_from_disk
-
-from .repository import GitHubRepo, RepoUVManager
-from .utils import SWEBenchInstance
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -18,75 +17,57 @@ if not logger.handlers:
 logger.propagate = False
 
 
-def setup_environment(
-    instance: SWEBenchInstance, root_dir: str | Path = "/kaggle/tmp", fallback_python_version: str = "3.10"
-) -> RepoUVManager:
-    """
-    Sets up an environment for a given SWE-Bench instance following the steps:
-        (1) Generate a name for the environment (instance ID + commit hash).
-        (2) Initialize the repository handler and clone the repo at environment_setup_commit.
-        (3) Initialize the RepoUVManager with fallback_python_version (or a more advanced detection).
-        (4) Create the virtual environment.
-        (5) Install dependencies (requirements.txt, pyproject.toml, or setup.py).
-        (6) Checkout the base_commit after installation.
+# リポジトリをローカルで再現
+def clone_and_checkout(repo: str, commit_hash: str, repo_dir: str):
+    repo_url = f"https://github.com/{repo}.git"
 
-    Args:
-        instance (SWEBenchInstance):
-            Contains information about the environment (repo, commits, etc.).
-        root_dir (str | Path):
-            The root directory where the repository should be cloned.
-        fallback_python_version (str):
-            The Python version to use if no advanced detection is done.
+    if not os.path.exists(repo_dir):
+        subprocess.run(
+            ["git", "clone", repo_url, repo_dir], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
 
-    Returns:
-        RepoUVManager:
-            - The specialized UV environment manager.
-    """
+    try:
+        subprocess.run(
+            ["git", "checkout", commit_hash],
+            cwd=repo_dir,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except subprocess.CalledProcessError:
+        pass
 
-    # ----------------------------------------------------------
-    # (1) Create the GitHub repo object
-    # ----------------------------------------------------------
-    github_repo = GitHubRepo.from_swebench_instance(instance, root_dir=root_dir)
+    try:
+        subprocess.run(["git", "stash"], cwd=repo_dir, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(
+            ["git", "checkout", commit_hash],
+            cwd=repo_dir,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    # ここでもエラーが出たら一度ディレクトリを削除し、cloneからやり直す
+    except subprocess.CalledProcessError:
+        pass
 
-    # ----------------------------------------------------------
-    # (2) Initialize a RepoUVManager with the new environment name
-    #     and link to the cloned GitHubRepo
-    # ----------------------------------------------------------
-    # We store the environment in root_dir/env_name (or any path you like)
-    repo_uv = RepoUVManager(
-        venv_dir_path=root_dir, github_repo=github_repo, fallback_python_version=fallback_python_version
-    )
-
-    # ----------------------------------------------------------
-    # (3) Clone the repo and checkout the correct commit for
-    #     env setup. Done internally now within __init__
-    # ----------------------------------------------------------
-    # repo_uv.clone_and_checkout_repo()
-
-    # ----------------------------------------------------------
-    # (4) Remove github actions
-    # ----------------------------------------------------------
-    repo_uv.remove_github_actions()
-
-    # ----------------------------------------------------------
-    # (5) Create the UV virtual environment
-    # ----------------------------------------------------------
-    repo_uv.initialize()
-
-    # ----------------------------------------------------------
-    # (6) Install dependencies, if any
-    #     - This might look in requirements.txt or do 'uv pip install .'
-    # ----------------------------------------------------------
-    repo_uv.install_repo_dependencies()
-
-    # ----------------------------------------------------------
-    # (7) Checkout the base_commit if different from environment_setup_commit
-    # ----------------------------------------------------------
-    if instance.base_commit != instance.environment_setup_commit:
-        repo_uv.github_repo.checkout_commit(instance.base_commit)
-
-    # Return both objects so user can interact further
-    return repo_uv
+    try:
+        subprocess.run(["rm", "-rf", repo_dir], check=True)
+        subprocess.run(
+            ["git", "clone", repo_url, repo_dir],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        subprocess.run(
+            ["git", "checkout", commit_hash],
+            cwd=repo_dir,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    # それでもエラーが出たらエラーを投げる
+    except subprocess.CalledProcessError:
+        raise
 
 
 def setup_data(

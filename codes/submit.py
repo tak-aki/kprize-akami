@@ -26,7 +26,7 @@ def predict_inner(
     env_setup_cmds_templates: list[str],
     skip_prediction: bool = False,
     save_result: bool = True,
-    max_file_lines: int = 5,
+    max_file_lines: int = 10,
 ) -> str:
     """
     Args:
@@ -40,6 +40,7 @@ def predict_inner(
         return None
 
     directory: str = REPO_PATH
+    print(problem_statement)
 
     relative_paths = walk_directory(directory)
     file_lines = extract_file_and_error_lines(relative_paths, problem_statement)

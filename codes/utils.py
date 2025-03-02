@@ -71,6 +71,16 @@ def extract_file_and_error_lines(file_paths: List[str], problem_statement: str) 
             line_number = int(line_str) if line_str is not None else None
             results.append((fp, line_number))
 
+        # ④ Python traceback 形式のパターン
+        #     例:
+        #       File ""/Users/jwalls/release/lib/python3.12/site-packages/astroid/nodes/node_classes.py"",
+        #       line 4778, in _infer_from_values
+        pattern_traceback = rf'File\s+["\']+(?:[^"\']*/)*{escaped_fp}["\']+,\s+line\s+(\d+)'
+        for match in re.finditer(pattern_traceback, problem_statement, flags=re.IGNORECASE):
+            line_str = match.group(1)
+            line_number = int(line_str) if line_str is not None else None
+            results.append((fp, line_number))
+
     # line_number が None のものを削除
     results = [(fp, ln) for fp, ln in results if ln is not None]
 

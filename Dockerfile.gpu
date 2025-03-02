@@ -1,4 +1,5 @@
 FROM gcr.io/kaggle-gpu-images/python:v158
 
-RUN pip install --no-cache-dir  vllm==0.7.1 bitsandbytes fsspec==2024.9.0 pre_commit==4.0.1 cfgv==3.4.0 dill==0.3.8 triton==3.1.0
-RUN pip install --no-cache-dir  unidiff rank_bm25 langchain-community
+RUN pip install --no-cache-dir vllm==0.7.1 bitsandbytes fsspec==2024.9.0 pre_commit==4.0.1 cfgv==3.4.0 dill==0.3.8 triton==3.1.0
+RUN pip install --no-cache-dir unidiff rank_bm25 langchain-community
+RUN pip install --no-cache-dir ghapi python-dotenv docker modal tenacity

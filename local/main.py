@@ -1,12 +1,22 @@
+import json
 import logging
 import shutil
 import time
-from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
+from typing import cast
 
+import docker
+import numpy as np
+
+from codes.config import llm_model_pth
 from codes.submit import REPO_PATH, predict_inner
-from local.src.setup import setup_data, setup_demo_environment
-from local.src.utils import SWEBenchInstance, capture_stdout, save_json
+from local.src.setup import clone_and_checkout, setup_data
+from local.src.utils import save_json, set_seed
+from swebench.harness.constants import SWEbenchInstance
+from swebench.harness.docker_utils import clean_images, list_images
+from swebench.harness.run_evaluation import run_instance
+from swebench.harness.test_spec.test_spec import make_test_spec
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -20,9 +30,13 @@ logger.propagate = False
 
 
 def main():
-    start_time = time.time()
     split = "test"  # train, test, dev
     num_instances = 100
+    seed = 1029
+
+    start_time = time.time()
+    set_seed(seed)
+    rng = np.random.default_rng(seed)
 
     data_dir = Path("input/swe-bench/")
     cache_dir = data_dir / "cache"
@@ -32,7 +46,7 @@ def main():
 
     logger.info("Setting up the dataset.")
     swe_bench_data = setup_data(cache_dir, output_dir, dataset_name="princeton-nlp/SWE-bench", split=split)
-    swe_bench_data = swe_bench_data[:num_instances]
+    swe_bench_data = rng.choice(swe_bench_data, num_instances, replace=False)
 
     output_dir = Path("output/")
     shutil.rmtree(output_dir, ignore_errors=True)
@@ -40,51 +54,59 @@ def main():
 
     logger.info("Start running the predictor.")
 
+    docker_client = docker.from_env()
+    run_id = datetime.now().strftime("%Y%m%d%H%M%S")
+
     n_corrent = 0
     n_wrong = 0
     n_skipped = 0
 
+    wrong_instances = {}
+
     for data in swe_bench_data:
-        instance = SWEBenchInstance.from_df_row(data)
+        instance = cast(SWEbenchInstance, data)
+        instance_id = instance["instance_id"]
+        fail_to_pass = json.loads(instance["FAIL_TO_PASS"])
+        pass_to_pass = json.loads(instance["PASS_TO_PASS"])
+
+        fail_to_pass_test_count = len(fail_to_pass)
+        pass_to_pass_test_count = len(pass_to_pass)
+        num_tests = fail_to_pass_test_count + pass_to_pass_test_count
+
         shutil.rmtree(REPO_PATH, ignore_errors=True)
 
         logger.info("-----------------------------------------------------------------------------")
         logger.info(f"*** Current result: {n_corrent} correct, {n_wrong} wrong, {n_skipped} skipped. ***")
         logger.info("-----------------------------------------------------------------------------")
+        logger.info(f"Processing {instance_id}.")
+
+        result_dir = output_dir / instance_id
+        result_dir.mkdir(exist_ok=True)
 
         # Setup
-        logger.info(f"Setting up the environment for {instance.instance_id}.")
-        env = setup_demo_environment(instance, REPO_PATH)
+        logger.info(f"Setting up the environment for {instance_id}.")
+        clone_and_checkout(instance["repo"], instance["base_commit"], REPO_PATH)
 
         # Predict the patch
-        logger.info(f"Predicting the patch for {instance.instance_id}.")
-
-        with capture_stdout() as buffer:
-            patch = predict_inner(
-                instance.problem_statement,
-                repo_archive=None,
-                pip_packages_archive=None,
-                env_setup_cmds_templates=None,
-                skip_prediction=False,
-                save_result=False,
-            )
-
-        result_dir = output_dir / instance.instance_id
-        result_dir.mkdir(exist_ok=True)
-        result_path = result_dir / "result.json"
-
-        captured_output = buffer.getvalue().strip()
-        with open(result_dir / "log.txt", "w") as f:
-            f.write(captured_output)
+        logger.info(f"Predicting the patch for {instance_id}.")
+        patch = predict_inner(
+            instance["problem_statement"],
+            repo_archive=None,
+            pip_packages_archive=None,
+            env_setup_cmds_templates=None,
+            skip_prediction=False,
+            output_dir=result_dir,
+        )
 
         result = {
-            "instance_id": instance.instance_id,
+            "instance_id": instance_id,
             "status": "skipped",
             "success_count": 0,
-            "n_tests": len(instance.fail_to_pass + instance.pass_to_pass),
+            "n_tests": len(fail_to_pass + pass_to_pass),
             "patch": patch,
             "test_results": [],
         }
+        result_path = result_dir / "result.json"
 
         if patch is None:
             n_skipped += 1
@@ -92,29 +114,57 @@ def main():
             continue
 
         # Test
-        logger.info(f"Testing the patch for {instance.instance_id}.")
+        logger.info(f"Testing the patch for {instance_id}.")
+        test_spec = make_test_spec(instance, namespace="swebench", instance_image_tag="latest")
+        prediction = {
+            "instance_id": instance_id,
+            "model_name_or_path": llm_model_pth,
+            "model_patch": patch,
+        }
 
-        try:
-            env.apply_patch(patch)
-        except Exception as e:
-            logger.error(f"Failed to apply the patch for {instance.instance_id}.")
-            logger.error(e)
+        test_result = run_instance(
+            test_spec,
+            prediction,
+            rm_image=True,
+            force_rebuild=False,
+            client=docker_client,
+            run_id=run_id,
+            timeout=1800,
+            rewrite_reports=False,
+        )
+
+        if test_result is None:
+            logger.info(f"Failed to run the test for {instance_id}.")
+            wrong_instances[instance_id] = "Error in test execution"
+            n_wrong += 1
+            result["status"] = "wrong"
+            save_json(result, result_path)
+            continue
+
+        report = test_result[1][instance_id]
+
+        if not report["patch_successfully_applied"]:
+            logger.info(f"Failed to apply the patch for {instance_id}.")
 
             n_wrong += 1
             result["status"] = "wrong"
             save_json(result, result_path)
             continue
 
-        env.apply_patch(instance.test_patch)
-        test_results = [asdict(env.run_pytest(test)) for test in instance.fail_to_pass + instance.pass_to_pass]
-        success_count = sum([result["returncode"] == 0 for result in test_results])
-        status = "correct" if success_count == len(test_results) else "wrong"
+        test_results = report["tests_status"]
+        fail_to_pass_success_count = len(test_results["FAIL_TO_PASS"]["success"])
+        pass_to_pass_success_count = len(test_results["PASS_TO_PASS"]["success"])
+        success_count = fail_to_pass_success_count + pass_to_pass_success_count
+        status = "correct" if report["resolved"] else "wrong"
 
         if status == "correct":
-            logger.info(f"Patch for {instance.instance_id} is correct.")
+            logger.info(f"Patch for {instance_id} is correct. {success_count}/{num_tests} tests passed.")
             n_corrent += 1
         else:
-            logger.info(f"Patch for {instance.instance_id} is wrong. {success_count}/{len(test_results)} tests passed.")
+            logger.info(f"Patch for {instance_id} is wrong. {success_count}/{num_tests} tests passed.")
+            logger.info(f"  FAIL_TO_PASS: {fail_to_pass_success_count}/{fail_to_pass_test_count}")
+            logger.info(f"  PASS_TO_PASS: {pass_to_pass_success_count}/{pass_to_pass_test_count}")
+            wrong_instances[instance_id] = f"Test failed. ({success_count}/{num_tests})"
             n_wrong += 1
 
         result["status"] = status
@@ -122,11 +172,18 @@ def main():
         result["test_results"] = test_results
         save_json(result, result_path)
 
+    clean_images(docker_client, list_images(docker_client), cache_level="env", clean=False)
     shutil.rmtree(REPO_PATH, ignore_errors=True)
+
+    logger.info("-----------------------------------------------------------------------------")
+    logger.info("Wrong instances:")
+    for instance_id, reason in wrong_instances.items():
+        logger.info(f"{instance_id}: {reason}")
+    logger.info("-----------------------------------------------------------------------------")
 
     elapsed_time = time.time() - start_time
     logger.info(f"Elapsed time: {elapsed_time // 3600} hours {elapsed_time % 3600 // 60} minutes.")
-    logger.info(f"n_correct: {n_corrent}, n_wrong: {n_wrong}, n_skipped: {n_skipped}")
+    logger.info(f"Result: {n_corrent} correct, {n_wrong} wrong, {n_skipped} skipped.")
 
 
 if __name__ == "__main__":

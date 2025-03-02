@@ -1,33 +1,38 @@
 import io
 import os
-import shutil
+import re
 import subprocess
 import time
-from typing import List, Tuple, Dict, Optional
+import warnings
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
+import torch
+import unidiff
 
 # https://www.kaggle.com/competitions/ai-mathematical-olympiad-progress-prize-2/discussion/560682#3113134
 os.environ["TRITON_PTXAS_PATH"] = "/usr/local/cuda/bin/ptxas"
 
 start_time = time.time()
 
-from vllm import LLM, SamplingParams, RequestOutput
-import warnings
+
+from vllm import LLM, RequestOutput, SamplingParams
 
 warnings.simplefilter("ignore")
 
 
 ## Initialize LLM
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 if os.getenv("KAGGLE_KERNEL_RUN_TYPE") or os.getenv("KAGGLE_IS_COMPETITION_RERUN"):
-    llm_model_pth: str = (
-        "/kaggle/input/deepseek-r1/transformers/deepseek-r1-distill-qwen-32b-awq/1"
-    )
+    llm_model_pth: str = "/kaggle/input/deepseek-r1/transformers/deepseek-r1-distill-qwen-32b-awq/1"
+    num_gpus: int = 4
 else:
-    llm_model_pth: str = "" # Add your local model path here
+    llm_model_pth: str = "inarikami/DeepSeek-R1-Distill-Qwen-32B-AWQ"
+    num_gpus: int = torch.cuda.device_count()
+
+os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, range(num_gpus)))
 
 BATCH_SIZE: int = 6
 VALIDATION_COPY_COUNT: int = 1
@@ -41,15 +46,17 @@ llm: LLM = LLM(
     max_num_seqs=MAX_NUM_SEQS,  # Maximum number of sequences per iteration. Default is 256
     max_model_len=MAX_MODEL_LEN,  # Model context length
     trust_remote_code=True,  # Trust remote code (e.g., from HuggingFace) when downloading the model and tokenizer
-    tensor_parallel_size=4,  # The number of GPUs to use for distributed execution with tensor parallelism
+    tensor_parallel_size=num_gpus,  # The number of GPUs to use for distributed execution with tensor parallelism
     gpu_memory_utilization=0.95,  # The ratio (between 0 and 1) of GPU memory to reserve for the model
     seed=2024,
 )
 
 tokenizer = llm.get_tokenizer()
 
+
 def count_tokens(text: str) -> int:
     return len(tokenizer.encode(text))
+
 
 ## Helper functions
 def stringify_directory(directory: str) -> str:
@@ -60,8 +67,6 @@ def stringify_directory(directory: str) -> str:
             full_path: str = os.path.join(root, file)
             full_paths.append(full_path)
     return "\n".join(full_paths)
-
-import re
 
 
 def extract_file_query(xml_content: str) -> Dict[str, List[str]]:
@@ -82,9 +87,7 @@ def extract_file_query(xml_content: str) -> Dict[str, List[str]]:
                 # Extract the <filepath> text
                 filepath = entry.find("filepath")
                 filepath_text: Optional[str] = (
-                    filepath.text.strip()
-                    if filepath is not None and filepath.text is not None
-                    else None
+                    filepath.text.strip() if filepath is not None and filepath.text is not None else None
                 )
 
                 # Locate <strings_to_search> container
@@ -99,7 +102,7 @@ def extract_file_query(xml_content: str) -> Dict[str, List[str]]:
 
                 # Store in a dictionary: { filepath: [search_strings...] }
                 parsed_data[filepath_text] = search_strings  # type: ignore
-        except:
+        except Exception:
             print("Error parsing output")
             print(xml_content)
             return {}
@@ -107,8 +110,7 @@ def extract_file_query(xml_content: str) -> Dict[str, List[str]]:
     return parsed_data
 
 
-reading_prompt: str = (
-    """
+reading_prompt: str = """
 You will be implementing a git diff patch to solve an issue with the code repository.
 You will first need to select files in the file directory.
 
@@ -161,12 +163,9 @@ Notes:
 - Search the test files as well to understand the feature behavior
     - Also search for the relevant function calls in the test files
 """.strip()
-)
 
 
-def get_selection_query(
-    directory_string: str, problem_statement: str
-) -> Tuple[List[str], List[Dict[str, List[str]]]]:
+def get_selection_query(directory_string: str, problem_statement: str) -> Tuple[List[str], List[Dict[str, List[str]]]]:
     sampling_params: SamplingParams = SamplingParams(
         temperature=0.6,  # randomness of the sampling
         min_p=0.01,
@@ -189,9 +188,7 @@ def get_selection_query(
 
     prompt_texts: List[str] = [
         (
-            tokenizer.apply_chat_template(
-                conversation=messages, tokenize=False, add_generation_prompt=True
-            )  # type: ignore
+            tokenizer.apply_chat_template(conversation=messages, tokenize=False, add_generation_prompt=True)  # type: ignore
         )
         + "<think>\n"
         for messages in list_of_messages
@@ -199,31 +196,21 @@ def get_selection_query(
     # print(prompt_texts)
 
     print("get_selection_query", [count_tokens(text) for text in prompt_texts])
-    request_outputs: list[RequestOutput] = llm.generate(
-        prompt_texts, sampling_params=sampling_params
-    )
+    request_outputs: list[RequestOutput] = llm.generate(prompt_texts, sampling_params=sampling_params)
     if not request_outputs:
         return [], []
-    response_texts: List[str] = [
-        request_output.outputs[0].text for request_output in request_outputs
-    ]
+    response_texts: List[str] = [request_output.outputs[0].text for request_output in request_outputs]
     print("get_selection_query", [count_tokens(text) for text in response_texts])
 
-    completion_texts = [
-        prompt_text + response_text
-        for prompt_text, response_text in zip(prompt_texts, response_texts)
-    ]
-    file_queries: List[Dict[str, List[str]]] = [
-        extract_file_query(response_text) for response_text in response_texts
-    ]
+    completion_texts = [prompt_text + response_text for prompt_text, response_text in zip(prompt_texts, response_texts)]
+    file_queries: List[Dict[str, List[str]]] = [extract_file_query(response_text) for response_text in response_texts]
     return completion_texts, file_queries
+
 
 REPO_PATH: str = "repo"
 
 
-def fetch_file_contents(
-    files_to_search: Dict[str, List[str]], context_lines: int = 12, max_gap: int = 0
-) -> str:
+def fetch_file_contents(files_to_search: Dict[str, List[str]], context_lines: int = 12, max_gap: int = 0) -> str:
     from io import StringIO
     from typing import Tuple
 
@@ -279,9 +266,7 @@ def fetch_file_contents(
     # 3. MERGE OVERLAPPING/ADJACENT SNIPPETS
     # ---------------------------------------------------------
 
-    def merge_file_snippets(
-        file_snippets: List[List[Tuple[int, str]]], gap: int = 0
-    ) -> List[List[Tuple[int, str]]]:
+    def merge_file_snippets(file_snippets: List[List[Tuple[int, str]]], gap: int = 0) -> List[List[Tuple[int, str]]]:
         """
         Merge overlapping or nearly adjacent snippets in a single file’s snippet list.
         """
@@ -308,9 +293,7 @@ def fetch_file_contents(
                     combined_dict[ln] = txt
                 for ln, txt in snippet:
                     combined_dict[ln] = txt
-                merged_snippet: List[Tuple[int, str]] = [
-                    (ln, combined_dict[ln]) for ln in sorted(combined_dict)
-                ]
+                merged_snippet: List[Tuple[int, str]] = [(ln, combined_dict[ln]) for ln in sorted(combined_dict)]
                 merged[-1] = (prev_start, new_end, merged_snippet)
             else:
                 merged.append((start, end, snippet))
@@ -341,14 +324,12 @@ def fetch_file_contents(
     has_any_matches: bool = False
 
     # 1) Gather snippets around each match
-    context_snippets: List[List[List[Tuple[int, str]]]] = (
-        find_lines_in_files_with_context(files_to_search, context_lines=context_lines)
+    context_snippets: List[List[List[Tuple[int, str]]]] = find_lines_in_files_with_context(
+        files_to_search, context_lines=context_lines
     )
 
     # 2) Merge overlapping snippets
-    merged_snips: List[List[List[Tuple[int, str]]]] = merge_all_snippets(
-        context_snippets, gap=max_gap
-    )
+    merged_snips: List[List[List[Tuple[int, str]]]] = merge_all_snippets(context_snippets, gap=max_gap)
 
     # 3) Build a string (instead of printing)
     output = StringIO()
@@ -359,7 +340,7 @@ def fetch_file_contents(
 
     # For each file
     for (filepath, terms), snippet_list in zip(files_to_search.items(), merged_snips):
-        output.write(f"[file name]: {filepath[len(REPO_PATH) + 1:]}\n")
+        output.write(f"[file name]: {filepath[len(REPO_PATH) + 1 :]}\n")
         terms_searched_as_str = "\n".join(terms)
         output.write(f"[terms searched]:\n{terms_searched_as_str}\n")
         output.write("[file content begin]\n")
@@ -370,9 +351,7 @@ def fetch_file_contents(
             for snippet_idx, snippet in enumerate(snippet_list, start=1):
                 snippet_start: int = snippet[0][0]
                 snippet_end: int = snippet[-1][0]
-                output.write(
-                    f"\nMatch #{snippet_idx}, lines {snippet_start} to {snippet_end}:\n"
-                )
+                output.write(f"\nMatch #{snippet_idx}, lines {snippet_start} to {snippet_end}:\n")
                 for line_no, text in snippet:
                     output.write(f"  {line_no:3d} | {text}\n")
                 output.write("\n")
@@ -384,6 +363,7 @@ def fetch_file_contents(
         return file_content_string
     return ""
 
+
 def extract_patch_string(text: str) -> Optional[str]:
     pattern: str = r"\n```diff\n(.*?)\n```"
     matches: List[str] = re.findall(pattern, text, re.DOTALL)
@@ -392,8 +372,7 @@ def extract_patch_string(text: str) -> Optional[str]:
     return matches[-1] + "\n"
 
 
-patching_prompt: str = (
-    """
+patching_prompt: str = """
 You will be implementing a git diff patch to solve an issue with the code repository.
 This is the problem statement.
 
@@ -434,14 +413,9 @@ Reminder
 - Put your diff within ```diff and ``` and make sure the diff is valid.
 - Only the last diff printed will be considered.
 """.strip()
-)
-
-import re
 
 
-def get_patch_string(
-    problem_statement: str, file_content_strings: List[str]
-) -> Tuple[List[str], List[Optional[str]]]:
+def get_patch_string(problem_statement: str, file_content_strings: List[str]) -> Tuple[List[str], List[Optional[str]]]:
     sampling_params: SamplingParams = SamplingParams(
         temperature=0.6,  # randomness of the sampling
         min_p=0.01,
@@ -450,9 +424,7 @@ def get_patch_string(
     )
 
     inference_idx_to_input_idx: list[int] = [
-        input_idx
-        for input_idx, file_content_string in enumerate(file_content_strings)
-        if file_content_string != ""
+        input_idx for input_idx, file_content_string in enumerate(file_content_strings) if file_content_string != ""
     ]
 
     list_of_messages: List[List[Dict[str, str]]] = [
@@ -470,9 +442,7 @@ def get_patch_string(
 
     prompt_texts: List[str] = [
         (
-            tokenizer.apply_chat_template(
-                conversation=messages, tokenize=False, add_generation_prompt=True
-            )  # type: ignore
+            tokenizer.apply_chat_template(conversation=messages, tokenize=False, add_generation_prompt=True)  # type: ignore
         )
         + "<think>\n"
         for messages in list_of_messages
@@ -480,25 +450,17 @@ def get_patch_string(
     # print(prompt_texts)
 
     print("get_patch_string", [count_tokens(text) for text in prompt_texts])
-    request_outputs: list[RequestOutput] = llm.generate(
-        prompt_texts, sampling_params=sampling_params
-    )
-    response_texts_from_inference: List[str] = [
-        request_output.outputs[0].text for request_output in request_outputs
-    ]
+    request_outputs: list[RequestOutput] = llm.generate(prompt_texts, sampling_params=sampling_params)
+    response_texts_from_inference: List[str] = [request_output.outputs[0].text for request_output in request_outputs]
     print(
         "get_patch_string",
         [count_tokens(text) for text in response_texts_from_inference],
     )
     completion_texts_from_inference = [
-        prompt_text + response_text
-        for prompt_text, response_text in zip(
-            prompt_texts, response_texts_from_inference
-        )
+        prompt_text + response_text for prompt_text, response_text in zip(prompt_texts, response_texts_from_inference)
     ]
     patch_strings_from_inference: List[Optional[str]] = [
-        extract_patch_string(response_text)
-        for response_text in response_texts_from_inference
+        extract_patch_string(response_text) for response_text in response_texts_from_inference
     ]
 
     completion_texts: list[str] = ["" for _ in file_content_strings]
@@ -512,10 +474,8 @@ def get_patch_string(
 
     return completion_texts, patch_strings
 
-from pathlib import Path
 
-verifying_prompt: str = (
-    """
+verifying_prompt: str = """
 This is the problem statement.
 
 {problem_statement}
@@ -540,14 +500,13 @@ Reminder
 - Only evaluate, do not provide suggestion on how to fix.
 - Remember to write exactly either of <label>Yes</label> or <label>No</label> in the last line
 """.strip()
-)
 
 
 def is_valid_patch_format(patch_string: str) -> bool:
     """
     A quick check to confirm if a patch could be valid.
     """
-    if not(isinstance(patch_string, str)):
+    if not (isinstance(patch_string, str)):
         return False
     try:
         patch_set = unidiff.PatchSet(patch_string)
@@ -569,15 +528,15 @@ def patch_dry_run_succeeds(patch_string: str, repo_path: str = REPO_PATH, timeou
         repo_path: Path to the directory to be patched.
         timeout: Number of seconds before the dry run will be cancelled.
     """
-    with open("patch.txt", "w") as f:
+    patch_path = Path("patch.txt").resolve()
+    with patch_path.open("w") as f:
         f.write(patch_string)
-    patch_path = "/kaggle/working/patch.txt"
 
-    cmd = f"patch --quiet --dry-run -p1 -i {patch_path} -d {repo_path}"
+    cmd = f"patch --quiet --dry-run -p1 -i {str(patch_path)} -d {repo_path}"
     try:
         subprocess.run(cmd, shell=True, check=True, timeout=timeout)
         return True
-    except subprocess.CalledProcessError:
+    except Exception:
         return False
 
 
@@ -599,7 +558,8 @@ def get_verification(
         input_idx
         for _ in range(VALIDATION_COPY_COUNT)
         for input_idx, patch_string in enumerate(patch_strings)
-        if patch_string is not None and is_valid_patch_format(patch_string) # and patch_dry_run_succeeds(patch_string, repo_path)
+        if patch_string is not None
+        and is_valid_patch_format(patch_string)  # and patch_dry_run_succeeds(patch_string, repo_path)
     ]
     print(inference_idx_to_input_idx)
 
@@ -619,9 +579,7 @@ def get_verification(
 
     prompt_texts: List[str] = [
         (
-            tokenizer.apply_chat_template(
-                conversation=messages, tokenize=False, add_generation_prompt=True
-            )  # type: ignore
+            tokenizer.apply_chat_template(conversation=messages, tokenize=False, add_generation_prompt=True)  # type: ignore
         )
         + "<think>\n"
         for messages in list_of_messages
@@ -629,37 +587,23 @@ def get_verification(
     # print(prompt_texts)
 
     print("get_verification", [count_tokens(text) for text in prompt_texts])
-    request_outputs: list[RequestOutput] = llm.generate(
-        prompt_texts, sampling_params=sampling_params
-    )
-    response_texts: List[str] = [
-        request_output.outputs[0].text for request_output in request_outputs
-    ]
+    request_outputs: list[RequestOutput] = llm.generate(prompt_texts, sampling_params=sampling_params)
+    response_texts: List[str] = [request_output.outputs[0].text for request_output in request_outputs]
     print("get_verification", [count_tokens(text) for text in response_texts])
 
-    completion_texts = [
-        prompt_text + response_text
-        for prompt_text, response_text in zip(prompt_texts, response_texts)
-    ]
-    judgments_flattened: List[bool] = [
-        "<label>Yes</label>" in response_text for response_text in response_texts
-    ]
+    completion_texts = [prompt_text + response_text for prompt_text, response_text in zip(prompt_texts, response_texts)]
+    judgments_flattened: List[bool] = ["<label>Yes</label>" in response_text for response_text in response_texts]
     print(judgments_flattened)
 
     judgments_aggregated: List[List[bool]] = [[] for _ in file_content_strings]
     completion_text_aggregated: List[List[str]] = [[] for _ in patch_strings]
-    for inference_idx, (completion_text, judgement) in enumerate(
-        zip(completion_texts, judgments_flattened)
-    ):
+    for inference_idx, (completion_text, judgement) in enumerate(zip(completion_texts, judgments_flattened)):
         input_idx = inference_idx_to_input_idx[inference_idx]
         completion_text_aggregated[input_idx].append(completion_text)
         judgments_aggregated[input_idx].append(judgement)
     print(judgments_aggregated)
 
     return completion_text_aggregated, judgments_aggregated
-
-import unidiff
-import subprocess
 
 
 def choose_patch_string(
@@ -670,69 +614,59 @@ def choose_patch_string(
 
     scores = []
     for judgments, patch_string in zip(judgments_aggregated, patch_strings):
-
         if patch_string is None:
             score = -3
             scores.append(score)
             continue
-        
+
         if not is_valid_patch_format(patch_string):
             score = -2
             scores.append(score)
             continue
-        
+
         if not patch_dry_run_succeeds(patch_string, repo_path):
             score = -1
             scores.append(score)
             continue
-        
+
         score = judgments.count(True)
         scores.append(score)
-        
+
         if score > best_score:
             best_score = score
             best_patch_string = patch_string
 
     return scores, best_patch_string
 
+
 def predict_inner(
-        problem_statement: str, 
-        repo_archive: io.BytesIO, 
-        pip_packages_archive: io.BytesIO, 
-        env_setup_cmds_templates: list[str], 
-        skip_prediction: bool = False
-    ) -> str:
-    """ 
+    problem_statement: str,
+    repo_archive: io.BytesIO,
+    pip_packages_archive: io.BytesIO,
+    env_setup_cmds_templates: list[str],
+    skip_prediction: bool = False,
+    save_result: bool = True,
+) -> str:
+    """
     Args:
         problem_statement: The text of the git issue.
-        repo_path: A BytesIO buffer path with a .tar containing the codebase that must be patched. The gateway will make this directory available immediately before this function runs.
+        repo_path: A BytesIO buffer path with a .tar containing the codebase that must be patched.
+            The gateway will make this directory available immediately before this function runs.
         pip_packages_archive: A BytesIO buffer path with a .tar containing the wheel files necessary for running unit tests.
         env_setup_cmds_templates: Commands necessary for installing the pip_packages_archive.
     """
     if skip_prediction:
         return None
 
-    with open("repo_archive.tar", "wb") as f:
-        f.write(repo_archive.read())
     directory: str = REPO_PATH
-    if os.path.exists(directory):
-        shutil.rmtree(directory)
-    shutil.unpack_archive("repo_archive.tar", extract_dir=directory)
-    os.remove("repo_archive.tar")
 
     directory_string = stringify_directory(directory)
 
-    selection_completion_texts, file_queries = get_selection_query(
-        directory_string, problem_statement
-    )
+    selection_completion_texts, file_queries = get_selection_query(directory_string, problem_statement)
 
-    file_content_strings: List[str] = [
-        fetch_file_contents(file_query) for file_query in file_queries
-    ]
+    file_content_strings: List[str] = [fetch_file_contents(file_query) for file_query in file_queries]
 
-    patch_completion_texts, patch_strings = get_patch_string(
-        problem_statement, file_content_strings
-    )
+    patch_completion_texts, patch_strings = get_patch_string(problem_statement, file_content_strings)
 
     verification_completion_texts_aggregated, judgments_aggregated = get_verification(
         problem_statement, file_content_strings, patch_strings, directory
@@ -745,16 +679,12 @@ def predict_inner(
             "problem_statement": [problem_statement] * len(file_queries),
             "selection_completion_text": selection_completion_texts,
             "selection_completion_length": [
-                count_tokens(completion_text)
-                for completion_text in selection_completion_texts
+                count_tokens(completion_text) for completion_text in selection_completion_texts
             ],
             "file_query": file_queries,
             "file_content_string": file_content_strings,
             "patch_completion_text": patch_completion_texts,
-            "patch_completion_length": [
-                count_tokens(completion_text)
-                for completion_text in patch_completion_texts
-            ],
+            "patch_completion_length": [count_tokens(completion_text) for completion_text in patch_completion_texts],
             "patch_string": patch_strings,
         }
 
@@ -768,17 +698,14 @@ def predict_inner(
                 for completion_texts in verification_completion_texts_aggregated
             ]
             data[f"judgment_{copy_idx}"] = [
-                judgments[copy_idx] if judgments else None
-                for judgments in judgments_aggregated
+                judgments[copy_idx] if judgments else None for judgments in judgments_aggregated
             ]
 
         data["judgment_count_true"] = [judgments.count(True) for judgments in judgments_aggregated]
         data["score"] = scores
 
-        pd.DataFrame(data).to_csv(
-            f"{str(int(time.time() - start_time)).zfill(5)}.csv", index=False
-        )
-    shutil.rmtree(directory)
+        if save_result:
+            pd.DataFrame(data).to_csv(f"{str(int(time.time() - start_time)).zfill(5)}.csv", index=False)
 
     print("submitted patch_string")
     print(patch_string)
@@ -787,4 +714,3 @@ def predict_inner(
         return None
 
     return patch_string
-

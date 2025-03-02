@@ -225,7 +225,12 @@ class GitHubRepo:
         self._logger.info(f"Applying patch at {patch_file}...")
         try:
             subprocess.run(
-                ["git", "apply", patch_file.name], cwd=self.root_repo_path, capture_output=True, text=True, check=True
+                f"patch -p1 < {patch_file.name}",
+                cwd=self.root_repo_path,
+                capture_output=True,
+                text=True,
+                check=True,
+                shell=True,
             )
             self._logger.info("Patch applied successfully.")
         except subprocess.CalledProcessError as e:
@@ -416,6 +421,7 @@ class RepoUVManager(UVManager):
         # (0) Upgrade pip and setup tools and whatnot
         self.pip_install("--upgrade pip", cwd=self.repo_path, verbose=True)
         self.pip_install("--upgrade setuptools wheel", cwd=self.repo_path, verbose=True)
+        self.pip_install("pytest", cwd=self.repo_path, verbose=True)
 
         # (1) Build-System Requires: install them if present in pyproject.toml
         pyproj = self.repo_path / "pyproject.toml"
@@ -424,7 +430,7 @@ class RepoUVManager(UVManager):
             if build_system_requires:
                 self._logger.info(f"Installing build-system requirements: {build_system_requires}")
                 build_cmd = " ".join(build_system_requires)
-                build_result = self.pip_install(build_cmd, editable=True, cwd=self.repo_path, verbose=True)
+                build_result = self.pip_install(build_cmd, cwd=self.repo_path, verbose=True)
                 if not build_result.success:
                     self._logger.error("Failed to install build-system requirements!")
                     return build_result  # Early return if needed
@@ -466,7 +472,7 @@ class RepoUVManager(UVManager):
         setup_py = self.repo_path / "setup.py"
         if setup_py.exists():
             self._logger.info("Installing local code via setup.py with uv pip install . (editable)")
-            result = self.pip_install(".", editable=True, cwd=self.repo_path)
+            result = self.pip_install([".", "--no-build-isolation"], editable=True, cwd=self.repo_path)
             return result
 
         # (5) No recognized files
@@ -520,7 +526,7 @@ class RepoUVManager(UVManager):
         if not self.repo_path:
             raise RuntimeError("No repo_path available; cannot run tests in an un-cloned repo.")
 
-        cmd_tokens = ["pytest"]
+        cmd_tokens = ["python", "-m", "pytest"]
         if test_path:
             cmd_tokens.append(test_path)
         if extra_args:

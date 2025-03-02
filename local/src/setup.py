@@ -18,11 +18,11 @@ if not logger.handlers:
 logger.propagate = False
 
 
-def setup_demo_environment(
+def setup_environment(
     instance: SWEBenchInstance, root_dir: str | Path = "/kaggle/tmp", fallback_python_version: str = "3.10"
 ) -> RepoUVManager:
     """
-    Sets up a demo environment for a given SWE-Bench instance following the steps:
+    Sets up an environment for a given SWE-Bench instance following the steps:
         (1) Generate a name for the environment (instance ID + commit hash).
         (2) Initialize the repository handler and clone the repo at environment_setup_commit.
         (3) Initialize the RepoUVManager with fallback_python_version (or a more advanced detection).

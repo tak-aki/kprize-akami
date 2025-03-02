@@ -245,13 +245,17 @@ class UVManager:
         if not self.env_ready and not bypass_env_check:
             raise RuntimeError("Environment not ready. Call initialize() first.")
 
-        # (2) Add a change of directory to the command if cwd is passed
+        # (2) Change current directory if cwd is passed
         if cwd:
-            command = f"cd {cwd} && {command}"
+            self._run_in_shell(f"cd {cwd}")
 
-        # Run the command and get the outputs, errors and return code
+        # (3) Run the command and get the outputs, errors and return code
         stdout, stderr = self._run_in_shell(command)
         retcode_out, _ = self._run_in_shell("echo $?")
+
+        # (4) Change back to original directory if cwd is passed
+        if cwd:
+            self._run_in_shell("cd -")
 
         try:
             returncode = int(retcode_out.strip())

@@ -28,17 +28,7 @@ def walk_directory(directory: str, depth: int = 2) -> List[str]:
 
 def extract_file_and_error_lines(file_paths: List[str], problem_statement: str) -> List[Tuple[str, Optional[int]]]:
     """
-    指定されたファイルパスのリストに対して、problem_statement内から
-    以下の各形式でファイルパスとエラー行番号を抽出します。
-
-    1. プレーンな表記: "ファイルパス:数字" または "ファイルパス, line 数字"
-    2. GitHub のリンク形式:
-       "https://github.com/owner/repo/blob/branch/ファイルパス#L数字"
-    3. "at line" 形式:
-       "at line 数字 of `ファイルパス`"
-
-    戻り値は、(ファイルパス, エラー行番号) のタプルのリストです。
-    エラー行番号が見つからない場合は None として返します。
+    指定されたファイルパスのリストに対して、problem_statement内からファイルパスとエラー行番号を抽出
     """
     results = []
 
@@ -85,14 +75,6 @@ def extract_file_and_error_lines(file_paths: List[str], problem_statement: str) 
     results = [(fp, ln) for fp, ln in results if ln is not None]
 
     return list(set(results))
-
-
-def stringify_directory(directory: str) -> str:
-    full_paths: List[str] = []
-    for root, dirs, files in os.walk(directory):
-        for file in files:
-            full_paths.append(os.path.join(root, file))
-    return "\n".join(full_paths)
 
 
 def extract_file_query(xml_content: str) -> Dict[str, List[str]]:

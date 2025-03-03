@@ -31,6 +31,7 @@ logger.propagate = False
 
 def main():
     split = "test"  # train, test, dev
+    dataset_name = "princeton-nlp/SWE-bench"
     num_instances = 100
     seed = 1029
 
@@ -38,14 +39,14 @@ def main():
     set_seed(seed)
     rng = np.random.default_rng(seed)
 
-    data_dir = Path("input/swe-bench/")
+    data_dir = Path("input/") / dataset_name.split("/")[-1].lower()
     cache_dir = data_dir / "cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
     output_dir = data_dir / "processed"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info("Setting up the dataset.")
-    swe_bench_data = setup_data(cache_dir, output_dir, dataset_name="princeton-nlp/SWE-bench", split=split)
+    swe_bench_data = setup_data(cache_dir, output_dir, dataset_name=dataset_name, split=split)
     swe_bench_data = rng.choice(swe_bench_data, num_instances, replace=False)
 
     output_dir = Path("output/")
@@ -178,7 +179,7 @@ def main():
     logger.info("-----------------------------------------------------------------------------")
     logger.info("Wrong instances:")
     for instance_id, reason in wrong_instances.items():
-        logger.info(f"{instance_id}: {reason}")
+        logger.info(f"  {instance_id}: {reason}")
     logger.info("-----------------------------------------------------------------------------")
 
     elapsed_time = time.time() - start_time

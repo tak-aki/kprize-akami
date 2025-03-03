@@ -42,15 +42,14 @@ def predict_inner(
         return None
 
     directory: str = REPO_PATH
-    print(problem_statement)
 
     relative_paths = walk_directory(directory)
-    file_lines = extract_file_and_error_lines(relative_paths, problem_statement)
-    print(f"{file_lines=}")
-    if len(file_lines) <= 0 or max_file_lines < len(file_lines):
+    file_error_lines = extract_file_and_error_lines(relative_paths, problem_statement)
+    print(f"extracted file and error lines: {file_error_lines}")
+    if len(file_error_lines) <= 0 or max_file_lines < len(file_error_lines):
         return None
 
-    file_content_string = fetch_file_from_line(file_lines)
+    file_content_string = fetch_file_from_line(file_error_lines)
     file_content_strings = [file_content_string for _ in range(BATCH_SIZE)]
 
     patch_completion_texts, patch_strings = get_patch_string(problem_statement, file_content_strings)
@@ -63,6 +62,7 @@ def predict_inner(
     if not os.getenv("KAGGLE_IS_COMPETITION_RERUN"):
         data = {
             "problem_statement": [problem_statement] * BATCH_SIZE,
+            "file_error_lines": "\n".join([f"{file}:{line}" for file, line in file_error_lines]),
             "file_content_string": file_content_strings,
             "patch_completion_text": patch_completion_texts,
             "patch_completion_length": [

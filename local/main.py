@@ -42,11 +42,11 @@ def main():
     data_dir = Path("input/") / dataset_name.split("/")[-1].lower()
     cache_dir = data_dir / "cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
-    output_dir = data_dir / "processed"
-    output_dir.mkdir(parents=True, exist_ok=True)
+    data_output_dir = data_dir / "processed"
+    data_output_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info("Setting up the dataset.")
-    swe_bench_data = setup_data(cache_dir, output_dir, dataset_name=dataset_name, split=split)
+    swe_bench_data = setup_data(cache_dir, data_output_dir, dataset_name=dataset_name, split=split)
     swe_bench_data = rng.choice(swe_bench_data, num_instances, replace=False)
 
     output_dir = Path("output/")

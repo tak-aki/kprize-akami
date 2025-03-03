@@ -1,6 +1,7 @@
 import io
 import os
 import time
+from pathlib import Path
 from typing import List
 
 import pandas as pd
@@ -27,6 +28,7 @@ def predict_inner(
     skip_prediction: bool = False,
     save_result: bool = True,
     max_file_lines: int = 10,
+    output_dir: str | None = None,
 ) -> str:
     """
     Args:
@@ -84,9 +86,11 @@ def predict_inner(
 
         data["judgment_count_true"] = [judgments.count(True) for judgments in judgments_aggregated]
         data["score"] = scores
+        data["elapsed_time"] = time.time() - start_time
 
-        if save_result:
-            pd.DataFrame(data).to_csv(f"{str(int(time.time() - start_time)).zfill(5)}.csv", index=False)
+        if output_dir is not None:
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
+            pd.DataFrame(data).to_csv(Path(output_dir) / "predictions.csv", index=False)
 
     print("submitted patch_string")
     print(patch_string)

@@ -9,6 +9,7 @@ import pandas as pd
 start_time = time.time()
 
 from .config import REPO_PATH, VALIDATION_COPY_COUNT, tokenizer
+from .classify_difficulty import classify_difficulty
 from .fetch_file import fetch_file_contents
 from .patching import get_patch_string
 from .selection_query import get_selection_query
@@ -39,6 +40,8 @@ def predict_inner(
 
     directory_string = stringify_directory(directory)
 
+    classification_completion_texts, classification_result = classify_difficulty(problem_statement, directory_string)
+
     selection_completion_texts, file_queries = get_selection_query(directory_string, problem_statement)
 
     file_content_strings: List[str] = [fetch_file_contents(file_query) for file_query in file_queries]
@@ -54,6 +57,8 @@ def predict_inner(
     if not os.getenv("KAGGLE_IS_COMPETITION_RERUN"):
         data = {
             "problem_statement": [problem_statement] * len(file_queries),
+            "classification_completion_texts": classification_completion_texts,
+            "classification_result": classification_result,
             "selection_completion_text": selection_completion_texts,
             "selection_completion_length": [
                 count_tokens(completion_text, tokenizer) for completion_text in selection_completion_texts

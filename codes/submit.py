@@ -8,15 +8,11 @@ import pandas as pd
 
 start_time = time.time()
 
-from .config import BATCH_SIZE, REPO_PATH, VALIDATION_COPY_COUNT, tokenizer
-from .fetch_file import fetch_file_contents, fetch_file_from_line
+from .config import REPO_PATH, VALIDATION_COPY_COUNT, tokenizer
+from .fetch_file import fetch_file_contents
 from .patching import get_patch_string
 from .selection_query import get_selection_query
-from .utils import (
-    count_tokens,
-    extract_file_and_error_lines,
-    walk_directory,
-)
+from .utils import count_tokens, stringify_directory
 from .verifying import choose_patch_string, get_verification
 
 
@@ -43,14 +39,11 @@ def predict_inner(
 
     directory: str = REPO_PATH
 
-    relative_paths = walk_directory(directory)
-    file_error_lines = extract_file_and_error_lines(relative_paths, problem_statement)
-    print(f"extracted file and error lines: {file_error_lines}")
-    if len(file_error_lines) <= 0 or max_file_lines < len(file_error_lines):
-        return None
+    directory_string = stringify_directory(directory)
 
-    file_content_string = fetch_file_from_line(file_error_lines)
-    file_content_strings = [file_content_string for _ in range(BATCH_SIZE)]
+    selection_completion_texts, file_queries = get_selection_query(directory_string, problem_statement)
+
+    file_content_strings: List[str] = [fetch_file_contents(file_query) for file_query in file_queries]
 
     patch_completion_texts, patch_strings = get_patch_string(problem_statement, file_content_strings)
     verification_completion_texts_aggregated, judgments_aggregated = get_verification(
@@ -61,8 +54,12 @@ def predict_inner(
 
     if not os.getenv("KAGGLE_IS_COMPETITION_RERUN"):
         data = {
-            "problem_statement": [problem_statement] * BATCH_SIZE,
-            "file_error_lines": "\n".join([f"{file}:{line}" for file, line in file_error_lines]),
+            "problem_statement": [problem_statement] * len(file_queries),
+            "selection_completion_text": selection_completion_texts,
+            "selection_completion_length": [
+                count_tokens(completion_text, tokenizer) for completion_text in selection_completion_texts
+            ],
+            "file_query": file_queries,
             "file_content_string": file_content_strings,
             "patch_completion_text": patch_completion_texts,
             "patch_completion_length": [

@@ -14,10 +14,10 @@ warnings.simplefilter("ignore")
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 if os.getenv("KAGGLE_KERNEL_RUN_TYPE") or os.getenv("KAGGLE_IS_COMPETITION_RERUN"):
-    llm_model_pth: str = "/kaggle/input/deepseek-r1/transformers/deepseek-r1-distill-qwen-32b-awq/1"
+    llm_model_pth: str = "/kaggle/input/tinyr1/transformers/tinyr1-32b-preview-awq/1"
     num_gpus: int = 4
 else:
-    llm_model_pth: str = "inarikami/DeepSeek-R1-Distill-Qwen-32B-AWQ"
+    llm_model_pth: str = "Orion-zhen/TinyR1-32B-Preview-AWQ"
     num_gpus: int = torch.cuda.device_count()
 
 os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, range(num_gpus)))

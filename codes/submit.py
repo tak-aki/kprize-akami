@@ -1,3 +1,4 @@
+import csv
 import io
 import os
 import time
@@ -86,7 +87,7 @@ def predict_inner(
 
         if output_dir is not None:
             Path(output_dir).mkdir(parents=True, exist_ok=True)
-            pd.DataFrame(data).to_csv(Path(output_dir) / "predictions.csv", index=False)
+            pd.DataFrame(data).to_csv(Path(output_dir) / "predictions.csv", index=False, quoting=csv.QUOTE_MINIMAL, escapechar='\\')
 
     print("submitted patch_string")
     print(patch_string)

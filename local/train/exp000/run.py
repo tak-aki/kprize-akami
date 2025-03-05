@@ -56,7 +56,7 @@ class ExpConfig:
     seed: int = 1029
     folds: List[int] = field(default_factory=lambda: [0])
     model_name: str = "inarikami/DeepSeek-R1-Distill-Qwen-32B-AWQ"
-    max_length: int = 9096
+    max_length: int = 2048
 
     lora_r: int = 16
     lora_alpha: float = lora_r * 2
@@ -287,7 +287,7 @@ def train(cfg: Config, output_dir: Path, df: pd.DataFrame):
     df["prompt"] = df.apply(lambda row: make_prompt(cfg, row, tokenizer), axis=1)
     df["prompt"] = df["prompt"] + "Answer:" + df["y_label"].astype(str)
     df_processed = preprocess_df(df, tokenizer)
-    # token len
+
     print(df_processed["input_ids"].apply(len).describe())
 
     for fold in cfg.exp.folds:

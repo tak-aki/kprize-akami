@@ -49,14 +49,14 @@ def main():
     swe_bench_data = setup_data(cache_dir, data_output_dir, dataset_name=dataset_name, split=split)
     swe_bench_data = rng.choice(swe_bench_data, num_instances, replace=False)
 
-    output_dir = Path("output/")
+    run_id = datetime.now().strftime("%Y%m%d%H%M%S")
+    output_dir = Path(f"output/{run_id}")
     shutil.rmtree(output_dir, ignore_errors=True)
-    output_dir.mkdir(exist_ok=True)
+    output_dir.mkdir(exist_ok=True, parents=True)
 
     logger.info("Start running the predictor.")
 
     docker_client = docker.from_env()
-    run_id = datetime.now().strftime("%Y%m%d%H%M%S")
 
     n_corrent = 0
     n_wrong = 0

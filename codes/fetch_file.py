@@ -1,14 +1,11 @@
-# utils.py
 import os
-from typing import Dict, List
+from io import StringIO
+from typing import Dict, List, Tuple
 
 from .config import REPO_PATH
 
 
 def fetch_file_contents(files_to_search: Dict[str, List[str]], context_lines: int = 12, max_gap: int = 0) -> str:
-    from io import StringIO
-    from typing import Tuple
-
     def find_lines_in_files_with_context(
         search_map: Dict[str, List[str]], context_lines: int = context_lines
     ) -> List[List[List[Tuple[int, str]]]]:
@@ -57,10 +54,6 @@ def fetch_file_contents(files_to_search: Dict[str, List[str]], context_lines: in
 
         return all_matches_per_file
 
-    # ---------------------------------------------------------
-    # 3. MERGE OVERLAPPING/ADJACENT SNIPPETS
-    # ---------------------------------------------------------
-
     def merge_file_snippets(file_snippets: List[List[Tuple[int, str]]], gap: int = 0) -> List[List[Tuple[int, str]]]:
         """
         Merge overlapping or nearly adjacent snippets in a single file’s snippet list.
@@ -102,19 +95,15 @@ def fetch_file_contents(files_to_search: Dict[str, List[str]], context_lines: in
         """
         Merge snippet blocks within each file.
         all_files_snips is a list-of-lists:
-          [
+            [
             [ snippetA, snippetB, ... ],  # file 1
             [ snippetC, snippetD, ... ],  # file 2
-          ]
+            ]
         """
         merged: List[List[List[Tuple[int, str]]]] = []
         for snips in all_files_snips:
             merged.append(merge_file_snippets(snips, gap=gap))
         return merged
-
-    # ---------------------------------------------------------
-    # 4. RUN LOGIC: generate files, search, merge, and BUILD A STRING
-    # ---------------------------------------------------------
 
     has_any_matches: bool = False
 

@@ -1,17 +1,11 @@
 # utils.py
 import os
 import re
-import subprocess
 import time
-from pathlib import Path
 from typing import Dict, List, Optional
 
 import pandas as pd
 import unidiff
-
-
-def count_tokens(text: str, tokenizer) -> int:
-    return len(tokenizer.encode(text))
 
 
 def stringify_directory(directory: str) -> str:
@@ -20,6 +14,22 @@ def stringify_directory(directory: str) -> str:
         for file in files:
             full_paths.append(os.path.join(root, file))
     return "\n".join(full_paths)
+
+
+def count_tokens(text: str, tokenizer) -> int:
+    return len(tokenizer.encode(text))
+
+
+def walk_directory(directory: str, depth: int = 2) -> List[str]:
+    relative_paths: List[str] = []
+    for root, dirs, files in os.walk(directory):
+        for file in files:
+            full_path = os.path.join(root, file)
+            # directoryを削除して相対パスを取得
+            rel_path = os.path.relpath(full_path, directory)
+            if len(rel_path.split(os.sep)) >= depth:
+                relative_paths.append(rel_path)
+    return relative_paths
 
 
 def extract_file_query(xml_content: str) -> Dict[str, List[str]]:

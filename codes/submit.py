@@ -22,6 +22,8 @@ def predict_inner(
     pip_packages_archive: io.BytesIO,
     env_setup_cmds_templates: list[str],
     skip_prediction: bool = False,
+    save_result: bool = True,
+    max_file_lines: int = 10,
     output_dir: str | None = None,
 ) -> str:
     """
@@ -44,7 +46,6 @@ def predict_inner(
     file_content_strings: List[str] = [fetch_file_contents(file_query) for file_query in file_queries]
 
     patch_completion_texts, patch_strings = get_patch_string(problem_statement, file_content_strings)
-
     verification_completion_texts_aggregated, judgments_aggregated = get_verification(
         problem_statement, file_content_strings, patch_strings, directory
     )

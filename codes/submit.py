@@ -46,7 +46,7 @@ def predict_inner(
     if skip_judge(classification_result):
         if not os.getenv("KAGGLE_IS_COMPETITION_RERUN"):
             data = {
-                "problem_statement": [problem_statement] * len(file_queries),
+                "problem_statement": [problem_statement] * len(classification_result),
                 "classification_completion_texts": classification_completion_texts,
                 "classification_result": classification_result,
                 "skip_judge": True,

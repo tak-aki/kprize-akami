@@ -1,6 +1,7 @@
 # classify_difficulty.py
 import re
 from typing import Dict, List, Optional, Tuple
+import pandas as pd
 
 from vllm import RequestOutput, SamplingParams
 
@@ -114,3 +115,11 @@ def classify_difficulty(directory_string: str, problem_statement: str) -> Tuple[
     classification_result = [extract_classification(rt) for rt in response_texts]
     print("classification_result", classification_result)
     return completion_texts, classification_result
+
+def skip_judge(
+        classification_result: Dict[str, List[str]], 
+        difficulty_threshold: float=2.5, 
+        well_specified_threchold: float=1.5
+        ) -> bool:
+    result_mean = pd.DataFrame(classification_result).mean()
+    return result_mean["difficulty"] > difficulty_threshold or result_mean["well_specified"] > well_specified_threchold

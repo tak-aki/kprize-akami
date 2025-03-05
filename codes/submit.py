@@ -9,7 +9,7 @@ import pandas as pd
 start_time = time.time()
 
 from .config import REPO_PATH, VALIDATION_COPY_COUNT, tokenizer
-from .classify_difficulty import classify_difficulty
+from .classify_difficulty import classify_difficulty, skip_judge
 from .fetch_file import fetch_file_contents
 from .patching import get_patch_string
 from .selection_query import get_selection_query
@@ -41,6 +41,20 @@ def predict_inner(
     directory_string = stringify_directory(directory)
 
     classification_completion_texts, classification_result = classify_difficulty(problem_statement, directory_string)
+    if skip_judge(classification_result):
+        if not os.getenv("KAGGLE_IS_COMPETITION_RERUN"):
+            data = {
+                "problem_statement": [problem_statement] * len(file_queries),
+                "classification_completion_texts": classification_completion_texts,
+                "classification_result": classification_result,
+                "skip_judge": True,
+                "elapsed_time": time.time() - start_time
+            }
+            if output_dir is not None:
+                Path(output_dir).mkdir(parents=True, exist_ok=True)
+                pd.DataFrame(data).to_csv(Path(output_dir) / "predictions.csv", index=False)
+        print("skip this problem") 
+        return None
 
     selection_completion_texts, file_queries = get_selection_query(directory_string, problem_statement)
 

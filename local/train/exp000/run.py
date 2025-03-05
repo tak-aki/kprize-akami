@@ -5,7 +5,7 @@ import shutil
 import sys
 import textwrap
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
 
@@ -14,26 +14,24 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
+from datasets import Dataset
 from hydra.core.config_store import ConfigStore
 from hydra.core.hydra_config import HydraConfig
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
 from sklearn.metrics import accuracy_score, confusion_matrix, f1_score
 from sklearn.model_selection import StratifiedKFold
-from torch import Tensor
-from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig,
-    DataCollatorForCompletionOnlyLM,
-    DataCollatorWithPadding,
     PreTrainedTokenizerBase,
     Qwen2ForCausalLM,
     Qwen2Model,
     Trainer,
     TrainingArguments,
 )
+from trl import DataCollatorForCompletionOnlyLM
 
 from local.src.setup import setup_data
 from local.src.utils import set_seed
@@ -56,8 +54,9 @@ logger.propagate = False
 class ExpConfig:
     debug: bool = False
     seed: int = 1029
-    folds: list[int] = [0]
+    folds: List[int] = field(default_factory=lambda: [0])
     model_name: str = "inarikami/DeepSeek-R1-Distill-Qwen-32B-AWQ"
+    max_length: int = 9096
 
     lora_r: int = 16
     lora_alpha: float = lora_r * 2
@@ -65,10 +64,11 @@ class ExpConfig:
     lora_bias: str = "none"
 
     n_epochs: int = 2
+    warmup_steps: int = 20
     optim_type: str = "adamw_torch_fused"
-    per_device_train_batch_size: int = 16
-    gradient_accumulation_steps: int = 1
-    per_device_eval_batch_size: int = 8
+    per_device_train_batch_size: int = 1
+    gradient_accumulation_steps: int = 16
+    per_device_eval_batch_size: int = 1
     lr: float = 1e-4
 
     prompt_template: str = textwrap.dedent("""
@@ -88,7 +88,7 @@ class ExpConfig:
 
 @dataclass
 class EnvConfig:
-    exp_output_dir: str = "output"
+    exp_output_dir: str = "output_train"
 
 
 @dataclass
@@ -169,22 +169,22 @@ class CustomTokenizer:
         self.is_train = is_train
 
     def __call__(self, batch: dict) -> dict:
-        tokenized = self.tokenizer(batch["problem_statement"], max_length=self.max_length, truncation=True)
+        tokenized = self.tokenizer(batch["prompt"], max_length=self.max_length, truncation=True)
         if self.is_train:
-            labels = batch["y"]
+            labels = batch["y_label"]
             return {**tokenized, "labels": labels}
         else:
             return {**tokenized}
 
 
-def prepare_datasets(train: pd.DataFrame, tokenizer, config: Config, fold_idx: int):
+def prepare_datasets(train: pd.DataFrame, tokenizer, cfg: Config, fold_idx: int):
     """
     Prepare datasets for training and evaluation.
     """
     train_ds = Dataset.from_pandas(train[train.fold != fold_idx])
-    val_ds = Dataset.from_pandas(train[(train.fold == fold_idx) & ()])
+    val_ds = Dataset.from_pandas(train[(train.fold == fold_idx)])
 
-    encode = CustomTokenizer(tokenizer, max_length=config.max_length)
+    encode = CustomTokenizer(tokenizer, max_length=cfg.exp.max_length)
 
     train_ds = train_ds.map(encode, batched=True)
     val_ds = val_ds.map(encode, batched=True)
@@ -267,12 +267,11 @@ def make_prompt(cfg: Config, row, tokenizer):
     )
 
 
-def preprocess_row(row: pd.Series, tokenizer: PreTrainedTokenizerBase) -> dict:
-    item = tokenizer(row["prompt"], add_special_tokens=False, truncation=False)
-    return item
-
-
 def preprocess_df(df: pd.DataFrame, tokenizer: PreTrainedTokenizerBase) -> pd.DataFrame:
+    def preprocess_row(row: pd.Series, tokenizer: PreTrainedTokenizerBase) -> dict:
+        item = tokenizer(row["prompt"], add_special_tokens=False, truncation=False)
+        return item
+
     items = []
     for _, row in tqdm(df.iterrows(), total=len(df)):
         items.append(preprocess_row(row, tokenizer))
@@ -285,12 +284,14 @@ def train(cfg: Config, output_dir: Path, df: pd.DataFrame):
     tokenizer = AutoTokenizer.from_pretrained(cfg.exp.model_name)
 
     df["y_label"] = df["difficulty"].map({"<15 min fix": 0, "15 min - 1 hour": 1, "1-4 hours": 2, ">4 hours": 3})
-    df["prompt"] = df.apply(lambda row: make_prompt(row, tokenizer), axis=1)
-    df["prompt"] = df["prompt"] + "Answer:" + df["y_label"]
+    df["prompt"] = df.apply(lambda row: make_prompt(cfg, row, tokenizer), axis=1)
+    df["prompt"] = df["prompt"] + "Answer:" + df["y_label"].astype(str)
     df_processed = preprocess_df(df, tokenizer)
+    # token len
+    print(df_processed["input_ids"].apply(len).describe())
 
     for fold in cfg.exp.folds:
-        model, tokenizer = setup_model_and_tokenizer(cfg)
+        model, tokenizer = setup_model_and_tokenizer(cfg.exp)
         train_ds, val_ds = prepare_datasets(df_processed, tokenizer, cfg, fold)
         trainer = setup_trainer(model, tokenizer, train_ds, val_ds, output_dir, cfg, fold)
         trainer.train()

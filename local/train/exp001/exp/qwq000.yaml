@@ -1,0 +1,5 @@
+defaults:  
+  - default@_here_ # defaultの値を設定してから上書きする
+
+n_epochs: 10
+model_name: Qwen/QwQ-32B-AWQ

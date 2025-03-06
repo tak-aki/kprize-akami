@@ -24,13 +24,14 @@ from tqdm import tqdm
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
-    BitsAndBytesConfig,
     PreTrainedTokenizerBase,
-    Qwen2ForCausalLM,
-    Qwen2Model,
     Trainer,
+    TrainerCallback,
+    TrainerControl,
+    TrainerState,
     TrainingArguments,
 )
+from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
 from trl import DataCollatorForCompletionOnlyLM
 
 from local.src.setup import setup_data
@@ -56,7 +57,7 @@ class ExpConfig:
     seed: int = 1029
     folds: List[int] = field(default_factory=lambda: [0])
     model_name: str = "inarikami/DeepSeek-R1-Distill-Qwen-32B-AWQ"
-    max_length: int = 2048
+    max_length: int = 3072
 
     lora_r: int = 16
     lora_alpha: float = lora_r * 2
@@ -68,7 +69,6 @@ class ExpConfig:
     optim_type: str = "adamw_torch_fused"
     per_device_train_batch_size: int = 1
     gradient_accumulation_steps: int = 16
-    per_device_eval_batch_size: int = 1
     lr: float = 1e-4
 
     prompt_template: str = textwrap.dedent("""
@@ -79,10 +79,9 @@ class ExpConfig:
         Please review the problem statement and estimate how long it will take to resolve the issue. Choose the appropriate number from the options below:
             1.	<15 min fix
             2.	15 min - 1 hour
-            3.	1-4 hours
-            4.	>4 hours
+            3.	>1 hours
 
-        Answer only the number (1, 2, 3, or 4).
+        Answer only the number (1, 2, or 3).
         """)
 
 
@@ -133,7 +132,6 @@ def setup_model_and_tokenizer(exp_cfg: ExpConfig):
         lora_dropout=exp_cfg.lora_dropout,
         bias=exp_cfg.lora_bias,
         inference_mode=False,
-        task_type=TaskType.SEQ_CLS,
         target_modules=[
             "q_proj",
             "k_proj",
@@ -178,10 +176,10 @@ class CustomTokenizer:
 
 
 def prepare_datasets(train: pd.DataFrame, tokenizer, cfg: Config, fold_idx: int):
-    """
-    Prepare datasets for training and evaluation.
-    """
-    train_ds = Dataset.from_pandas(train[train.fold != fold_idx])
+    train_df = train[train.fold != fold_idx]
+    if cfg.exp.debug:
+        train_df = train_df.head()
+    train_ds = Dataset.from_pandas(train_df)
     val_ds = Dataset.from_pandas(train[(train.fold == fold_idx)])
 
     encode = CustomTokenizer(tokenizer, max_length=cfg.exp.max_length)
@@ -190,6 +188,25 @@ def prepare_datasets(train: pd.DataFrame, tokenizer, cfg: Config, fold_idx: int)
     val_ds = val_ds.map(encode, batched=True)
 
     return train_ds, val_ds
+
+
+class SavePeftModelCallback(TrainerCallback):
+    def on_save(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
+        checkpoint_folder = os.path.join(args.output_dir, f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}")
+
+        peft_model_path = os.path.join(checkpoint_folder, "adapter_model")
+        kwargs["model"].save_pretrained(peft_model_path)
+
+        pytorch_model_path = os.path.join(checkpoint_folder, "pytorch_model.bin")
+        if os.path.exists(pytorch_model_path):
+            os.remove(pytorch_model_path)
+        return control
 
 
 def setup_trainer(model, tokenizer, train_ds, val_ds, output_dir, cfg: Config, fold_idx: int):
@@ -205,17 +222,14 @@ def setup_trainer(model, tokenizer, train_ds, val_ds, output_dir, cfg: Config, f
         num_train_epochs=cfg.exp.n_epochs,
         per_device_train_batch_size=cfg.exp.per_device_train_batch_size,
         gradient_accumulation_steps=cfg.exp.gradient_accumulation_steps,
-        per_device_eval_batch_size=cfg.exp.per_device_eval_batch_size,
         gradient_checkpointing=True,
         save_total_limit=None,
-        evaluation_strategy="epoch",
         save_strategy="epoch",
         logging_strategy="epoch",
         optim=cfg.exp.optim_type,
         fp16=True,
         learning_rate=cfg.exp.lr,
         warmup_steps=cfg.exp.warmup_steps,
-        metric_for_best_model="auc",
         greater_is_better=True,
         report_to="none",
         gradient_checkpointing_kwargs={"use_reentrant": False},
@@ -227,27 +241,9 @@ def setup_trainer(model, tokenizer, train_ds, val_ds, output_dir, cfg: Config, f
         model=model,
         tokenizer=tokenizer,
         train_dataset=train_ds,
-        eval_dataset=val_ds,
-        compute_metrics=compute_metrics,
         data_collator=data_collator,
+        callbacks=[SavePeftModelCallback],
     )
-
-
-def compute_metrics(eval_pred):
-    logits, labels = eval_pred
-    predictions = np.argmax(logits, axis=-1)
-
-    accuracy = accuracy_score(labels, predictions)
-    f1_macro = f1_score(labels, predictions, average="macro")
-    f1_weighted = f1_score(labels, predictions, average="weighted")
-    conf_matrix = confusion_matrix(labels, predictions)
-
-    return {
-        "accuracy": accuracy,
-        "f1_macro": f1_macro,
-        "f1_weighted": f1_weighted,
-        "confusion_matrix": conf_matrix.tolist(),
-    }
 
 
 def make_prompt(cfg: Config, row, tokenizer):
@@ -283,7 +279,9 @@ def preprocess_df(df: pd.DataFrame, tokenizer: PreTrainedTokenizerBase) -> pd.Da
 def train(cfg: Config, output_dir: Path, df: pd.DataFrame):
     tokenizer = AutoTokenizer.from_pretrained(cfg.exp.model_name)
 
-    df["y_label"] = df["difficulty"].map({"<15 min fix": 0, "15 min - 1 hour": 1, "1-4 hours": 2, ">4 hours": 3})
+    df["y_label"] = df["difficulty"].map(
+        {"<15 min fix": 1, "15 min - 1 hour": 2, "1-4 hours": 3, ">4 hours": 3}
+    )  # ３クラスにする
     df["prompt"] = df.apply(lambda row: make_prompt(cfg, row, tokenizer), axis=1)
     df["prompt"] = df["prompt"] + "Answer:" + df["y_label"].astype(str)
     df_processed = preprocess_df(df, tokenizer)
@@ -295,7 +293,6 @@ def train(cfg: Config, output_dir: Path, df: pd.DataFrame):
         train_ds, val_ds = prepare_datasets(df_processed, tokenizer, cfg, fold)
         trainer = setup_trainer(model, tokenizer, train_ds, val_ds, output_dir, cfg, fold)
         trainer.train()
-        trainer.evaluate()
 
 
 @hydra.main(version_base=None, config_path=".", config_name="config")

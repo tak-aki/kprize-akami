@@ -29,11 +29,11 @@ from .run import setup_swe_verified_data
 # 3クラス分類
 DIFFICULTY2TOKEN = {
     "<15 min fix": "easy",
-    "15 min - 1 hour": "midium",
+    "15 min - 1 hour": "medium",
     "1-4 hours": "difficult",
     ">4 hours": "difficult",
 }
-TOKENS = ["easy", "midium", "difficult"]
+TOKENS = ["easy", "medium", "difficult"]
 TOKEN2LABEL = {token: i for i, token in enumerate(TOKENS)}
 
 # ログ設定

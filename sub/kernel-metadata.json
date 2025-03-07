@@ -18,6 +18,6 @@
     "mtfall/kprize-akami-deps"
   ],
   "model_sources": [
-    "shelterw/deepseek-r1/transformers/deepseek-r1-distill-qwen-32b-awq/1"
+    "mtfall/deepseek-r1/transformers/deepseek-r1-distill-llama-70b-awq/1"
   ]
 }

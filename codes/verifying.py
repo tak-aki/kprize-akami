@@ -126,7 +126,7 @@ def get_verification(
         for _ in range(VALIDATION_COPY_COUNT)
         for input_idx, patch_string in enumerate(patch_strings)
         if patch_string is not None
-        and is_valid_patch_format(patch_string)  # and patch_dry_run_succeeds(patch_string, repo_path)
+        and is_valid_patch_format(patch_string) and patch_dry_run_succeeds(patch_string, repo_path)
     ]
     print(inference_idx_to_input_idx)
 

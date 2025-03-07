@@ -22,22 +22,22 @@ else:
 
 os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, range(num_gpus)))
 
-BATCH_SIZE: int = 6
+BATCH_SIZE: int = 3
 VALIDATION_COPY_COUNT: int = 1
-MAX_TOKENS: int = 4096
+MAX_TOKENS: int = 8192
 
 MAX_NUM_SEQS: int = 6
 MAX_MODEL_LEN: int = 32_768
 
 
-# llm: LLM = LLM(
-#     model=llm_model_pth,
-#     max_num_seqs=MAX_NUM_SEQS,  # Maximum number of sequences per iteration. Default is 256
-#     max_model_len=MAX_MODEL_LEN,  # Model context length
-#     trust_remote_code=True,  # Trust remote code (e.g., from HuggingFace) when downloading the model and tokenizer
-#     tensor_parallel_size=num_gpus,  # The number of GPUs to use for distributed execution with tensor parallelism
-#     gpu_memory_utilization=0.95,  # The ratio (between 0 and 1) of GPU memory to reserve for the model
-#     seed=2024,
-# )
+llm: LLM = LLM(
+    model=llm_model_pth,
+    max_num_seqs=MAX_NUM_SEQS,  # Maximum number of sequences per iteration. Default is 256
+    max_model_len=MAX_MODEL_LEN,  # Model context length
+    trust_remote_code=True,  # Trust remote code (e.g., from HuggingFace) when downloading the model and tokenizer
+    tensor_parallel_size=num_gpus,  # The number of GPUs to use for distributed execution with tensor parallelism
+    gpu_memory_utilization=0.95,  # The ratio (between 0 and 1) of GPU memory to reserve for the model
+    seed=2024,
+)
 
-# tokenizer = llm.get_tokenizer()
+tokenizer = llm.get_tokenizer()

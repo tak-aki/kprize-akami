@@ -31,6 +31,6 @@ def retrieve(
 
     directory: str = REPO_PATH
 
-    bm25_top_files = get_bm25_top_files(problem_statement, directory, top_k=5)
+    bm25_top_files = get_bm25_top_files(problem_statement, directory, top_k=30)
 
     return [f["file_path"] for f in bm25_top_files]

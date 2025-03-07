@@ -19,7 +19,8 @@ class BM25:
         bm25_rel_files = []
         for i, doc in enumerate(retriever_output):
             file_path = doc.metadata.get("file_path", "unknown")
-            file_content = doc.page_content
+            # contentに行番号をつける
+            file_content = "".join(f"{i:4}|{line}" for i, line in enumerate(doc.page_content.splitlines(keepends=True), start=1))
 
             bm25_rel_files.append({
                 "file_path": file_path,

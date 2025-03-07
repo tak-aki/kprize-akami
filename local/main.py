@@ -9,8 +9,8 @@ from typing import cast
 import docker
 import numpy as np
 
-from codes.config import llm_model_pth
-from codes.submit import REPO_PATH, predict_inner
+from codes_fixer.config import llm_model_pth
+from codes_fixer.submit import REPO_PATH, predict_inner
 from local.src.setup import clone_and_checkout, setup_data
 from local.src.utils import save_json, set_seed
 from swebench.harness.constants import SWEbenchInstance

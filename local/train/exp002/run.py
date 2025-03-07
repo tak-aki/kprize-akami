@@ -26,9 +26,6 @@ from transformers import (
     AutoTokenizer,
     PreTrainedTokenizerBase,
     Trainer,
-    TrainerCallback,
-    TrainerControl,
-    TrainerState,
     TrainingArguments,
 )
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR

@@ -96,6 +96,7 @@ def main():
             pip_packages_archive=None,
             env_setup_cmds_templates=None,
             skip_prediction=False,
+            difficulty_threshold=0.5,
             output_dir=result_dir,
         )
 

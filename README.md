@@ -9,6 +9,17 @@
 ├── deps # サブミットに必要なライブラリをファイルとして作成する。kernelとしてkaggleにアップ・実行することでsubmit notebookからインポート可能になる。  
 └── sub # submission用のnotebookをおく。
 
+## 環境構築
+```
+uv sync
+```
+
+difficulty モデル
+```
+cd input
+kaggle datasets download kami634/kprize-akami-difficulty-model
+unzip kprize-akami-difficulty-model.zip -d kprize-akami-difficulty-model
+```
 
 ## submit手順
 1. 変更したcodesをデータセットに反映するために、./codesにて以下コマンドを実行  

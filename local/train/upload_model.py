@@ -10,12 +10,6 @@ from kaggle.api.kaggle_api_extended import KaggleApi
 @click.command()
 @click.option("--title", "-t", default="kprize-akami-difficulty-model")
 @click.option("--dir", "-d", type=Path, default="output_train/exp002/002/fold0/checkpoint-50")
-@click.option(
-    "--extentions",
-    "-e",
-    type=list[str],
-    default=["best_model.pt", ".hydra/*.yaml"],
-)
 @click.option("--user_name", "-u", default="kami634")
 @click.option("--new", "-n", is_flag=True)
 def main(

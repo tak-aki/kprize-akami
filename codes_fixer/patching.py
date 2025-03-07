@@ -7,10 +7,12 @@ from .config import BATCH_SIZE, MAX_TOKENS, llm, tokenizer
 from .utils import count_tokens, extract_patch_string
 
 patching_prompt: str = """
-You will be implementing a git diff patch to solve an issue with the code repository.
-This is the problem statement.
+In this task, you will be provided with a software development issue from a real-world GitHub repository, along with the content of retrieved code files for modification. 
+Your objective is to carefully analyze and understand the issue in the context of the provided files, and create a patch that completely resolves the problem if given files needs modification. 
 
+<problem_statement>
 {problem_statement}
+</problem_statement>
 
 This is the file that is thought to be relevant
 
@@ -22,8 +24,16 @@ This is the file that is thought to be relevant
 {file_content}
 </file_content>
 
-Only if the issue can be completely resolved by modifications to the given file, write a git diff within ```diff and ``` that fully fixes the problem.
-The git diff should not cause other tests to fail.
+You will break down the task into two steps. 
+
+First, analyze the problem_statement and retrieved file to identify which part of the codes is the cause of the issue. 
+When doing so, focus only on the functional parts and do not consider minor details such as the accuracy of comments in the code. 
+If, after this analysis, you determine that the retrieved file is irrelevant to resolving the issue or is insufficient, stop the task.
+
+Second, based on the cause of the issue, output a diff format patch for modification. 
+The diff patch should be output based on the example below. 
+The diff patch must be necessary and sufficient to resolve the problem, and does not affect any functionality other than the problem.
+When creating the diff, if you determine that the retrieved file is irrelevant to resolving the issue or is insufficient, stop the task without creating a diff.
 
 Example:
 

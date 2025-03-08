@@ -38,6 +38,7 @@ llm: LLM = LLM(
     tensor_parallel_size=num_gpus,  # The number of GPUs to use for distributed execution with tensor parallelism
     gpu_memory_utilization=0.95,  # The ratio (between 0 and 1) of GPU memory to reserve for the model
     enable_prefix_caching=True, 
+    cpu_offload_gb=16,
     seed=2024,
 )
 

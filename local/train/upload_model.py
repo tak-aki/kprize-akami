@@ -1,7 +1,7 @@
 import json
 import shutil
 from pathlib import Path
-from typing import Any
+from typing import Any, List
 
 import click
 from kaggle.api.kaggle_api_extended import KaggleApi
@@ -9,12 +9,17 @@ from kaggle.api.kaggle_api_extended import KaggleApi
 
 @click.command()
 @click.option("--title", "-t", default="kprize-akami-difficulty-model")
-@click.option("--dir", "-d", type=Path, default="output_train/exp002/002/fold0/checkpoint-50")
+@click.option(
+    "--dirs",
+    "-d",
+    type=list[str],
+    default=["output_train/exp002/002/fold0/checkpoint-50", "output_train/exp003/70b_003/fold0/checkpoint-100"],
+)
 @click.option("--user_name", "-u", default="kami634")
 @click.option("--new", "-n", is_flag=True)
 def main(
     title: str,
-    dir: Path,
+    dirs: List[Path],
     user_name: str = "kami634",
     new: bool = False,
 ):
@@ -30,7 +35,11 @@ def main(
     tmp_dir.mkdir(parents=True, exist_ok=True)
 
     # ディレクトリ全体をtmp_dirにコピー
-    shutil.copytree(dir, tmp_dir / dir.name)
+    for dir in dirs:
+        name = "-".join(dir.split("/"))
+        dir = Path(dir)
+
+        shutil.copytree(dir, tmp_dir / name)
 
     # dataset-metadata.jsonを作成
     dataset_metadata: dict[str, Any] = {}

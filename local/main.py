@@ -31,7 +31,7 @@ logger.propagate = False
 
 def main():
     split = "test"  # train, test, dev
-    dataset_name = "princeton-nlp/SWE-bench"
+    dataset_name = "princeton-nlp/SWE-bench_Verified"
     num_instances = 100
     seed = 1029
 
@@ -96,7 +96,6 @@ def main():
             pip_packages_archive=None,
             env_setup_cmds_templates=None,
             skip_prediction=False,
-            difficulty_threshold=0.5,
             output_dir=result_dir,
         )
 

@@ -76,7 +76,7 @@ def patch_dry_run_succeeds(patch_string: str, repo_path: str = REPO_PATH, timeou
 def choose_patch_string(
     patch_strings: list[Optional[str]], judgments_aggregated: List[List[bool]], repo_path: str
 ) -> tuple[list[int], Optional[str]]:
-    best_score = -4
+    best_score = 0
     best_patch_string = None
 
     scores = []
@@ -102,6 +102,7 @@ def choose_patch_string(
         if score > best_score:
             best_score = score
             best_patch_string = patch_string
+    print("choose_patch_string score:", scores)
 
     return scores, best_patch_string
 

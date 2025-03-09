@@ -38,7 +38,9 @@ def predict_inner(
 
     directory: str = REPO_PATH
 
-    bm25_top_files = get_bm25_top_files(problem_statement, directory, top_k=1)
+    bm25_top_files = get_bm25_top_files(problem_statement, directory, top_k=30)
+    llm_retrieved_files = retrieve_files_by_llm(problem_statement, directory, bm25_top_files)
+    
 
     directory_string = stringify_directory(directory)
     patch_completion_texts, patch_strings = get_patch_string(problem_statement, bm25_top_files, directory_string)

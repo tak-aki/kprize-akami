@@ -1,0 +1,5 @@
+defaults:  
+  - default@_here_ # defaultの値を設定してから上書きする
+
+lora_r: 32
+n_epochs: 4

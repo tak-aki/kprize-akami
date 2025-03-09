@@ -11,6 +11,7 @@ warnings.simplefilter("ignore")
 
 
 ## Initialize LLM
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 if os.getenv("KAGGLE_KERNEL_RUN_TYPE") or os.getenv("KAGGLE_IS_COMPETITION_RERUN"):
@@ -21,11 +22,10 @@ if os.getenv("KAGGLE_KERNEL_RUN_TYPE") or os.getenv("KAGGLE_IS_COMPETITION_RERUN
     num_gpus: int = 4
 else:
     llm_model_pth: str = "Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ"
-    difficulty_lora_path: str = "output_train/exp003/70b_003/fold0/checkpoint-100"
+    difficulty_lora_path: str = "output_train/exp004/70b_003/fold0/checkpoint-100"  # ダウンロードしたloraのパス
     num_gpus: int = torch.cuda.device_count()
 
 os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, range(num_gpus)))
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 BATCH_SIZE: int = 6
 VALIDATION_COPY_COUNT: int = 1

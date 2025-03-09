@@ -13,7 +13,10 @@ from kaggle.api.kaggle_api_extended import KaggleApi
     "--dirs",
     "-d",
     type=list[str],
-    default=["output_train/exp002/002/fold0/checkpoint-50", "output_train/exp003/70b_003/fold0/checkpoint-100"],
+    default=[
+        "output_train/exp004/003/fold0/checkpoint-100",  #  0.6000
+        "output_train/exp004/70b_003/fold0/checkpoint-100",  #  0.6300
+    ],
 )
 @click.option("--user_name", "-u", default="kami634")
 @click.option("--new", "-n", is_flag=True)

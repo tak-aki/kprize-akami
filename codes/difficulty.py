@@ -40,7 +40,6 @@ def make_inference_prompt(problem_statement, tokenizer):
     正解を付加しない「Answer:」までのプロンプトを作成
     """
     messages = [
-        {"role": "system", "content": "You are Qwen, created by Alibaba Cloud. You are a helpful assistant."},
         {"role": "user", "content": PROMPT_TEMPLATE.format(problem_statement=problem_statement)},
     ]
     # 事前に定義したテンプレートをもとに、モデルの入力形式に合わせた文字列を作成

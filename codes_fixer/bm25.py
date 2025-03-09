@@ -3,6 +3,17 @@ from typing import List
 from langchain_community.retrievers import BM25Retriever
 from langchain_community.docstore.document import Document
 
+import logging
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+logger.propagate = False
+
 class BM25:
     def __init__(self, top_k=30):
         self.top_k = top_k
@@ -19,13 +30,11 @@ class BM25:
         bm25_rel_files = []
         for i, doc in enumerate(retriever_output):
             file_path = doc.metadata.get("file_path", "unknown")
+            file_content = doc.page_content
             # contentに行番号をつける
-            file_content = "".join(f"{i:4}|{line}" for i, line in enumerate(doc.page_content.splitlines(keepends=True), start=1))
+            # file_content = "".join(f"{i:4}|{line}" for i, line in enumerate(file_content.splitlines(keepends=True), start=1))
 
-            bm25_rel_files.append({
-                "file_path": file_path,
-                "file_content": file_content,
-            })
+            bm25_rel_files.append(file_path)
         
         return bm25_rel_files
     
@@ -45,6 +54,8 @@ def load_repository_docs(repo_path: str):
             dirs.remove(".git")
         if ".github" in dirs:
             dirs.remove(".github")
+        if "tests" in dirs:
+            dirs.remove("tests")
 
         for filename in files:
             # Pythonファイル以外はスキップ
@@ -76,10 +87,12 @@ def get_bm25_top_files(issue: str, codebase_path: str, top_k: int = 30) -> List[
     """
     Retrieves top-k relevant files using BM25 and a fine-tuned retriever model.
     """
+    logger.info(f"Retrieving top {top_k} files using BM25 for the given issue.")
     file_docs = load_repository_docs(codebase_path)
 
     bm25 = BM25(top_k)
     bm25.fit(file_docs)
     top_files = bm25.get_rel_files(issue)
+    logger.info(f"Retrieved {len(top_files)} files.")
 
     return top_files

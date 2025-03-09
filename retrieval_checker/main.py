@@ -68,14 +68,17 @@ def main():
 
     logger.info("Start running.")
     result_list = []
-    for data in swe_bench_data:
+    for i, data in enumerate(swe_bench_data):
         instance_id = data["instance_id"]
         patch = data["patch"]
         gold_files = find_gold_files(patch)
 
         shutil.rmtree(REPO_PATH, ignore_errors=True)
 
-        logger.info(f"Processing {instance_id}.")
+
+        logger.info("-----------------------------------------------------------------------------")
+        logger.info(f"*** Processing {instance_id}. {i} of {len(swe_bench_data)} ***")
+        logger.info("-----------------------------------------------------------------------------")
 
         result_dir = output_dir / instance_id
         result_dir.mkdir(exist_ok=True)
@@ -86,7 +89,7 @@ def main():
 
         # Predict the patch
         logger.info(f"Retrieve files for {instance_id}.")
-        retrieved_files = retrieve(
+        retrieve_results = retrieve(
             data["problem_statement"],
             repo_archive=None,
             pip_packages_archive=None,
@@ -94,21 +97,47 @@ def main():
             skip_prediction=False,
             output_dir=result_dir,
         )
+        llm_batch_selected_files, bm25_retrieved_files, llm_batch_retrieved_files = retrieve_results
 
         # Evaluate
-        logger.info(f"Evaluating the retrieval for {instance_id}.")
-        eval_result = eval_retrieval(gold_files, retrieved_files)        
+        results = []
+        for eval_i, selected_files in enumerate(llm_batch_selected_files):
+            logger.info(f"Evaluating the llm selection for {instance_id}. iter: {eval_i}")
+            eval_result = eval_retrieval(gold_files, selected_files)        
 
+            result = {
+                "instance_id": instance_id,
+                "gold_files": gold_files,
+                "retrieved_files": selected_files, 
+                "info": f"llm_{eval_i}",
+            } | eval_result
+            logger.info(f"Evaluation result: {result}")
+            results.append(result)
+        logger.info(f"Evaluating the BM25 retrieval for {instance_id}. ")
+        bm25_eval_result = eval_retrieval(gold_files, bm25_retrieved_files)
         result = {
             "instance_id": instance_id,
             "gold_files": gold_files,
-            "retrieved_files": retrieved_files
-        } | eval_result
-        result_path = result_dir / "result.json"
-
+            "retrieved_files": bm25_retrieved_files,
+            "info": "BM25",
+        } | bm25_eval_result
         logger.info(f"Evaluation result: {result}")
-        save_json(result, result_path)
-        result_list.append(result)
+        results.append(result)
+        for eval_i, retrieved_files in enumerate(llm_batch_retrieved_files):
+            logger.info(f"Evaluating the retrieval for {instance_id}. iter: {eval_i}")
+            eval_result = eval_retrieval(gold_files, retrieved_files)        
+
+            result = {
+                "instance_id": instance_id,
+                "gold_files": gold_files,
+                "retrieved_files": retrieved_files, 
+                "info": f"llm_{eval_i}",
+            } | eval_result
+            logger.info(f"Evaluation result: {result}")
+            results.append(result)
+        result_path = result_dir / "result.json"
+        save_json(results, result_path)
+        result_list += results
     
     # Save the results
     result_df = pd.DataFrame(result_list)

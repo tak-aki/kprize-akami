@@ -10,6 +10,7 @@ start_time = time.time()
 
 from .config import BATCH_SIZE, REPO_PATH, VALIDATION_COPY_COUNT, tokenizer
 from .bm25 import get_bm25_top_files
+from .llm_retrieve import retrieve_files_by_llm
 from .patching import get_patch_string
 from .utils import count_tokens, stringify_directory
 from .verifying import choose_patch_string, get_verification

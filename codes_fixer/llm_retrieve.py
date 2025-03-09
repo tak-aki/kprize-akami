@@ -7,24 +7,22 @@ import json
 
 from vllm import RequestOutput, SamplingParams, LLM
 import torch
-from .utils import count_tokens, extract_patch_string
+from .utils import count_tokens
+from .config import BATCH_SIZE
 
-retrieve_prompt: str = """
-Input: {
-    "issue": {problem_statement},
-    "readme file": {readme},
-    "retrieved file documentations": {target_file},
-    "task": "In this task, you will be provided with a software development issue from a real-world GitHub repository, along with the repository's README file and a preliminarily retrieved file (documentation). Your objective is to carefully analyze the issue in the context of the provided file and Determine whether an issue and a file are related."
-}
+import logging
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+logger.propagate = False
 
-Output Format: {
-    "files for editing": 
-    {
-        "type": "array",
-        "items":"type": "string"
-    }
-}
-"""
+# def count_tokens(tokenizer, text): # Qwen2ベースのものにはこの書き方
+#     return len(tokenizer(text)["input_ids"])
 
 def find_readme(repo_path):
     # READMEファイル名の候補リスト（大文字小文字を区別しない）
@@ -212,30 +210,37 @@ def parse_python_file(source, file_path):
         }
         return result
     except Exception as e:
-        print(f"Error parsing file {file_path}: {e}")
-        result = {
-                "file_path": file_path,
-                "module_docstring": "", 
-                "classes": [""],
-                "functions": [""]
-            }
+        logger.info(f"Error parsing file {file_path}: {e}")
         return None
 
 def extract_retrieved_files(response_text: str) -> List[str]:
     """
     Extracts the retrieved files from the response text.
     """
-    files_str = re.findall(r"```output([^`]+)```", response_text, re.DOTALL)
-    files = json.loads(files_str[0].strip())
-    return files
+    try:
+        files = json.loads(response_text)
+    except json.JSONDecodeError:
+        logger.info("Error parsing JSON response.")
+        files = {
+            "files for editing": []
+        }
+    return files["files for editing"]
 
-def retrieve_files_by_llm(problem_statement: str, codebase_path: str, candidate_file: List[dict]):
+def load_file_content(file_path: str) -> str:
+    """
+    Loads the content of a file.
+    """
+    if not os.path.exists(file_path):
+        logger.info(f"File not found: {file_path}")
+        return ""
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        return f.read()
 
-    readme = find_readme(codebase_path)
-    file_documentations = [parse_python_file(f["file_content"], f["file_path"]) for f in candidate_file]
+def get_llm_retrieval(problem_statement: str, codebase_path: str, candidate_file: List[dict]):
 
     ## Initialize LLM
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
     if os.getenv("KAGGLE_KERNEL_RUN_TYPE") or os.getenv("KAGGLE_IS_COMPETITION_RERUN"):
         llm_model_pth: str = "/kaggle/input/deepseek-r1/transformers/deepseek-r1-distill-qwen-32b-awq/1" #TODO: Change this to the correct model
@@ -246,11 +251,9 @@ def retrieve_files_by_llm(problem_statement: str, codebase_path: str, candidate_
 
     os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, range(num_gpus)))
 
-    BATCH_SIZE: int = 1
-    VALIDATION_COPY_COUNT: int = 1
     MAX_TOKENS: int = 2048
 
-    MAX_NUM_SEQS: int = 1
+    MAX_NUM_SEQS: int = 6
     MAX_MODEL_LEN: int = 65_536
 
 
@@ -272,38 +275,72 @@ def retrieve_files_by_llm(problem_statement: str, codebase_path: str, candidate_
         skip_special_tokens=True,  # Whether to skip special tokens in the output
         max_tokens=MAX_TOKENS,
     )
+
+    # プロンプトの作成
+    readme = find_readme(codebase_path)
+    file_documentations = [parse_python_file(load_file_content(file_path), file_path) for file_path in candidate_file]
+    #file_documentationsからNoneを除外
+    file_documentations = [f for f in file_documentations if f is not None]
+    logger.info(f"num valid files: {len(file_documentations)}")
+
+    if len(file_documentations) == 0:
+        logger.info("All files are invalid")
+        return [] * BATCH_SIZE
+    prompt_json = {
+        "input": {
+            "issue": problem_statement,
+            "readme file": readme,
+            "retrieved file documentations": file_documentations,
+            "task": "In this task, you will be provided with a software development issue from a real-world GitHub repository, along with the repository's README file and a preliminarily retrieved file (documentation). Your objective is to carefully analyze the issue in the context of the provided file and Determine whether an issue and a file are related."
+        }, 
+        "output control": {
+            "files for editing": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                }
+            }
+        }
+    }
+    while count_tokens(json.dumps(prompt_json), tokenizer) > MAX_MODEL_LEN:
+        logger.info(
+            f"Exceeding token limit ({count_tokens(json.dumps(prompt_json), tokenizer)} > {MAX_MODEL_LEN}), remove last file and remaining files: {len(prompt_json['input']['retrieved file documentations'])-1}"
+        )
+        del prompt_json["input"]["retrieved file documentations"][-1]
+    retrieve_prompt = json.dumps(prompt_json)
+
     list_of_messages = [
         [
-            {
-                "role": "user",
-                "content": retrieve_prompt.format(
-                    problem_statement=problem_statement[:20_000],
-                    readme=readme[:20_000],
-                    target_file=file_documentations[:1000],
-                ),
-            },
+            # {"role": "system", "content": None},
+            {"role": "user", "content": retrieve_prompt},
         ]
         for _ in range(BATCH_SIZE)
     ]
 
     prompt_texts: List[str] = [
-        (
-            tokenizer.apply_chat_template(conversation=messages, tokenize=False, add_generation_prompt=True)  # type: ignore
-        )
-        + "<think>\n"
+        tokenizer.apply_chat_template(conversation=messages, tokenize=False, add_generation_prompt=True)  # type: ignore
         for messages in list_of_messages
     ]
 
-    print("retrieve_files_by_llm", [count_tokens(text, tokenizer) for text in prompt_texts])
+    logger.info(f"prompt_texts token length {[count_tokens(text, tokenizer) for text in prompt_texts]}")
     request_outputs: list[RequestOutput] = llm.generate(prompt_texts, sampling_params=sampling_params)
     response_texts_from_inference: List[str] = [request_output.outputs[0].text for request_output in request_outputs]
-    print(
-        "retrieve_files_by_llm",
-        [count_tokens(text, tokenizer) for text in response_texts_from_inference],
-    )
+    logger.info(f"response_texts_from_inference token length : {[count_tokens(text, tokenizer) for text in response_texts_from_inference]}")
     completion_texts_from_inference = [
         prompt_text + response_text for prompt_text, response_text in zip(prompt_texts, response_texts_from_inference)
     ]
     retrieved_files_from_inference: List[Optional[str]] = [
         extract_retrieved_files(response_text) for response_text in response_texts_from_inference
     ]
+
+    completion_texts: list[str] = ["" for _ in range(BATCH_SIZE)]
+    retrieved_files: List[Optional[str]] = [None for _ in range(BATCH_SIZE)]
+    for input_idx, (completion_text, retrieved_file) in enumerate(
+        zip(completion_texts_from_inference, retrieved_files_from_inference)
+    ):
+        completion_texts[input_idx] = completion_text
+        retrieved_files[input_idx] = retrieved_file
+
+    logger.info(f"num retrieved files: {[len(f) for f in retrieved_files]}")
+
+    return completion_texts, retrieved_files

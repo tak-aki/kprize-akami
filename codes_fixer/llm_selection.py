@@ -108,6 +108,7 @@ def get_llm_selection(directory_string: str, problem_statement: str) -> Tuple[Li
         trust_remote_code=True,  # Trust remote code (e.g., from HuggingFace) when downloading the model and tokenizer
         tensor_parallel_size=num_gpus,  # The number of GPUs to use for distributed execution with tensor parallelism
         gpu_memory_utilization=0.95,  # The ratio (between 0 and 1) of GPU memory to reserve for the model
+        enable_prefix_caching=True, 
         seed=2024,
     )
 

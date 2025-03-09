@@ -226,17 +226,18 @@ def extract_retrieved_files(response_text: str) -> List[str]:
         }
     return files["files for editing"]
 
-def load_file_content(file_path: str) -> str:
+def load_file_content(codebase_path: str, file_path_rel: str) -> str:
     """
     Loads the content of a file.
     """
+    file_path = os.path.join(codebase_path, file_path_rel)
     if not os.path.exists(file_path):
         logger.info(f"File not found: {file_path}")
         return ""
     with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
         return f.read()
 
-def get_llm_retrieval(problem_statement: str, codebase_path: str, candidate_file: List[dict]):
+def get_llm_retrieval(problem_statement: str, codebase_path: str, candidate_file_batch: List[dict]):
 
     ## Initialize LLM
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -264,6 +265,7 @@ def get_llm_retrieval(problem_statement: str, codebase_path: str, candidate_file
         trust_remote_code=True,  # Trust remote code (e.g., from HuggingFace) when downloading the model and tokenizer
         tensor_parallel_size=num_gpus,  # The number of GPUs to use for distributed execution with tensor parallelism
         gpu_memory_utilization=0.95,  # The ratio (between 0 and 1) of GPU memory to reserve for the model
+        enable_prefix_caching=True, 
         seed=2024,
     )
 
@@ -278,43 +280,47 @@ def get_llm_retrieval(problem_statement: str, codebase_path: str, candidate_file
 
     # プロンプトの作成
     readme = find_readme(codebase_path)
-    file_documentations = [parse_python_file(load_file_content(file_path), file_path) for file_path in candidate_file]
-    #file_documentationsからNoneを除外
-    file_documentations = [f for f in file_documentations if f is not None]
-    logger.info(f"num valid files: {len(file_documentations)}")
+    list_of_retrieve_prompt = []
+    for candidate_file in candidate_file_batch:
+        file_documentations = [parse_python_file(load_file_content(codebase_path, file_path), file_path) for file_path in candidate_file]
+        #file_documentationsからNoneを除外
+        file_documentations = [f for f in file_documentations if f is not None]
+        logger.info(f"num valid files: {len(file_documentations)}")
 
-    if len(file_documentations) == 0:
-        logger.info("All files are invalid")
-        return [] * BATCH_SIZE
-    prompt_json = {
-        "input": {
-            "issue": problem_statement,
-            "readme file": readme,
-            "retrieved file documentations": file_documentations,
-            "task": "In this task, you will be provided with a software development issue from a real-world GitHub repository, along with the repository's README file and a preliminarily retrieved file (documentation). Your objective is to carefully analyze the issue in the context of the provided file and Determine whether an issue and a file are related."
-        }, 
-        "output control": {
-            "files for editing": {
-                "type": "array",
-                "items": {
-                    "type": "string"
+        if len(file_documentations) == 0:
+            logger.info("All files are invalid")
+            list_of_retrieve_prompt.append("")
+            continue
+        prompt_json = {
+            "input": {
+                "issue": problem_statement,
+                "readme file": readme,
+                "retrieved file documentations": file_documentations,
+                "task": "In this task, you will be provided with a software development issue from a real-world GitHub repository, along with the repository's README file and a preliminarily retrieved file (documentation). Your objective is to carefully analyze the issue in the context of the provided file and Determine whether an issue and a file are related."
+            }, 
+            "output control": {
+                "files for editing": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         }
-    }
-    while count_tokens(json.dumps(prompt_json), tokenizer) > MAX_MODEL_LEN:
-        logger.info(
-            f"Exceeding token limit ({count_tokens(json.dumps(prompt_json), tokenizer)} > {MAX_MODEL_LEN}), remove last file and remaining files: {len(prompt_json['input']['retrieved file documentations'])-1}"
-        )
-        del prompt_json["input"]["retrieved file documentations"][-1]
-    retrieve_prompt = json.dumps(prompt_json)
+        while count_tokens(json.dumps(prompt_json), tokenizer) > MAX_MODEL_LEN:
+            logger.info(
+                f"Exceeding token limit ({count_tokens(json.dumps(prompt_json), tokenizer)} > {MAX_MODEL_LEN}), remove last file and remaining files: {len(prompt_json['input']['retrieved file documentations'])-1}"
+            )
+            del prompt_json["input"]["retrieved file documentations"][-1]
+        retrieve_prompt = json.dumps(prompt_json)
+        list_of_retrieve_prompt.append(retrieve_prompt)
 
     list_of_messages = [
         [
             # {"role": "system", "content": None},
             {"role": "user", "content": retrieve_prompt},
         ]
-        for _ in range(BATCH_SIZE)
+        for retrieve_prompt in list_of_retrieve_prompt
     ]
 
     prompt_texts: List[str] = [
@@ -333,8 +339,8 @@ def get_llm_retrieval(problem_statement: str, codebase_path: str, candidate_file
         extract_retrieved_files(response_text) for response_text in response_texts_from_inference
     ]
 
-    completion_texts: list[str] = ["" for _ in range(BATCH_SIZE)]
-    retrieved_files: List[Optional[str]] = [None for _ in range(BATCH_SIZE)]
+    completion_texts: list[str] = ["" for _ in candidate_file_batch]
+    retrieved_files: List[Optional[str]] = [None for _ in candidate_file_batch]
     for input_idx, (completion_text, retrieved_file) in enumerate(
         zip(completion_texts_from_inference, retrieved_files_from_inference)
     ):

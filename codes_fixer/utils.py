@@ -9,11 +9,13 @@ import unidiff
 
 
 def stringify_directory(directory: str) -> str:
-    full_paths: List[str] = []
+    rel_paths: List[str] = []
     for root, dirs, files in os.walk(directory):
         for file in files:
-            full_paths.append(os.path.join(root, file))
-    return "\n".join(full_paths)
+            file_path = os.path.join(root, file)
+            rel_path = os.path.relpath(file_path, start=directory)
+            rel_paths.append(rel_path)
+    return "\n".join(rel_paths)
 
 
 def count_tokens(text: str, tokenizer) -> int:

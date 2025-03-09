@@ -1,0 +1,5 @@
+defaults:  
+  - default@_here_ # defaultの値を設定してから上書きする
+
+n_epochs: 8
+model_name: Qwen/Qwen2.5-32B-Instruct-AWQ

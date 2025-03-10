@@ -109,45 +109,47 @@ def main():
             output_dir=result_dir,
             directory=repo_path,
         )
-        # llm_batch_selected_files, bm25_retrieved_files, llm_batch_retrieved_files = retrieve_results
-        bm25_retrieved_files = retrieve_results
+        llm_batch_selected_files, bm25_retrieved_files, llm_batch_retrieved_files = retrieve_results
 
         # Evaluate
         results = []
-        # for eval_i, selected_files in enumerate(llm_batch_selected_files):
-        #     logger.info(f"Evaluating the llm selection for {instance_id}. iter: {eval_i}")
-        #     eval_result = eval_retrieval(gold_files, selected_files)        
+        for eval_i, selected_files in enumerate(llm_batch_selected_files):
+            logger.info(f"Evaluating the llm selection for {instance_id}. iter: {eval_i}")
+            eval_result = eval_retrieval(gold_files, selected_files)        
 
-        #     result = {
-        #         "instance_id": instance_id,
-        #         "gold_files": gold_files,
-        #         "retrieved_files": selected_files, 
-        #         "info": f"llm_{eval_i}",
-        #     } | eval_result
-        #     logger.info(f"Evaluation result: {result}")
-        #     results.append(result)
-        # logger.info(f"Evaluating the BM25 retrieval for {instance_id}. ")
+            result = {
+                "instance_id": instance_id,
+                "gold_files": gold_files,
+                "retrieved_files": selected_files, 
+                "info": f"llm_selection",
+                "iter": eval_i,
+            } | eval_result
+            logger.info(f"Evaluation result: {result}")
+            results.append(result)
+        logger.info(f"Evaluating the BM25 retrieval for {instance_id}. ")
         bm25_eval_result = eval_retrieval(gold_files, bm25_retrieved_files)
         result = {
             "instance_id": instance_id,
             "gold_files": gold_files,
             "retrieved_files": bm25_retrieved_files,
             "info": "BM25",
+            "iter": 0,
         } | bm25_eval_result
         logger.info(f"Evaluation result: {result}")
         results.append(result)
-        # for eval_i, retrieved_files in enumerate(llm_batch_retrieved_files):
-        #     logger.info(f"Evaluating the retrieval for {instance_id}. iter: {eval_i}")
-        #     eval_result = eval_retrieval(gold_files, retrieved_files)        
+        for eval_i, retrieved_files in enumerate(llm_batch_retrieved_files):
+            logger.info(f"Evaluating the retrieval for {instance_id}. iter: {eval_i}")
+            eval_result = eval_retrieval(gold_files, retrieved_files)        
 
-        #     result = {
-        #         "instance_id": instance_id,
-        #         "gold_files": gold_files,
-        #         "retrieved_files": retrieved_files, 
-        #         "info": f"llm_{eval_i}",
-        #     } | eval_result
-        #     logger.info(f"Evaluation result: {result}")
-        #     results.append(result)
+            result = {
+                "instance_id": instance_id,
+                "gold_files": gold_files,
+                "retrieved_files": retrieved_files, 
+                "info": f"llm_retrieval",
+                "iter": eval_i,
+            } | eval_result
+            logger.info(f"Evaluation result: {result}")
+            results.append(result)
         result_path = result_dir / "result.json"
         save_json(results, result_path)
         result_list += results

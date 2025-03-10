@@ -14,7 +14,7 @@ warnings.simplefilter("ignore")
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 if os.getenv("KAGGLE_KERNEL_RUN_TYPE") or os.getenv("KAGGLE_IS_COMPETITION_RERUN"):
-    llm_model_pth: str = "/kaggle/input/deepseek-r1/transformers/deepseek-r1-distill-qwen-32b-awq/1"
+    llm_model_pth: str = "/kaggle/input/m/mtfall/deepseek-r1/transformers/deepseek-r1-distill-qwen-32b-awq/1"
     num_gpus: int = 4
 else:
     llm_model_pth: str = "inarikami/DeepSeek-R1-Distill-Qwen-32B-AWQ"

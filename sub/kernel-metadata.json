@@ -9,7 +9,8 @@
   "enable_tpu": "false",
   "enable_internet": "false",
   "dataset_sources": [
-    "mtfall/kprize-akami-codes"
+    "mtfall/kprize-akami-codes-fixer", 
+    "kami634/kprize-akami-difficulty-model"
   ],
   "competition_sources": [
     "konwinski-prize"
@@ -18,6 +19,7 @@
     "mtfall/kprize-akami-deps"
   ],
   "model_sources": [
-    "shelterw/deepseek-r1/transformers/deepseek-r1-distill-qwen-32b-awq/1"
+    "mtfall/deepseek-r1/Transformers/deepseek-r1-distill-llama-70b-awq/1", 
+    "mtfall/swe-fixer/transformers/swe-fixer-retriever-7b/1"
   ]
 }

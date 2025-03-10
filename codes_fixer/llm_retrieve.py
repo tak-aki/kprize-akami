@@ -233,7 +233,7 @@ def get_llm_retrieval(problem_statement: str, codebase_path: str, candidate_file
     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
     if os.getenv("KAGGLE_KERNEL_RUN_TYPE") or os.getenv("KAGGLE_IS_COMPETITION_RERUN"):
-        llm_model_pth: str = "/kaggle/input/deepseek-r1/transformers/deepseek-r1-distill-qwen-32b-awq/1" #TODO: Change this to the correct model
+        llm_model_pth: str = "/kaggle/input/swe-fixer/transformers/swe-fixer-retriever-7b/1" #TODO: Change this to the correct model
         num_gpus: int = 4
     else:
         llm_model_pth: str = "internlm/SWE-Fixer-Retriever-7B"

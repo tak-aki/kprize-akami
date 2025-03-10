@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import shutil
 import time
 from datetime import datetime
@@ -9,7 +10,7 @@ from typing import cast, List
 import numpy as np
 import pandas as pd
 
-from codes_fixer.retrieval_wrapper import REPO_PATH, retrieve
+from codes_fixer.retrieval_wrapper import retrieve
 from retrieval_checker.src.setup import clone_and_checkout, setup_data, find_gold_files
 from retrieval_checker.src.utils import save_json, set_seed
 
@@ -57,6 +58,7 @@ def main():
     dataset_name = "princeton-nlp/SWE-bench"
     num_instances = 100
     seed = 1029
+    REPO_PATH = "repo"
 
     start_time = time.time()
     set_seed(seed)
@@ -84,7 +86,8 @@ def main():
         patch = data["patch"]
         gold_files = find_gold_files(patch)
 
-        shutil.rmtree(REPO_PATH, ignore_errors=True)
+        repo_path = os.path.join(REPO_PATH, instance_id)
+        # shutil.rmtree(REPO_PATH, ignore_errors=True)
 
 
         logger.info("-----------------------------------------------------------------------------")
@@ -96,17 +99,15 @@ def main():
 
         # Setup
         logger.info(f"Setting up the environment for {instance_id}.")
-        clone_and_checkout(data["repo"], data["base_commit"], REPO_PATH)
+        clone_and_checkout(data["repo"], data["base_commit"], repo_path)
 
         # Predict the patch
         logger.info(f"Retrieve files for {instance_id}.")
         retrieve_results = retrieve(
             data["problem_statement"],
-            repo_archive=None,
-            pip_packages_archive=None,
-            env_setup_cmds_templates=None,
             skip_prediction=False,
             output_dir=result_dir,
+            directory=repo_path,
         )
         # llm_batch_selected_files, bm25_retrieved_files, llm_batch_retrieved_files = retrieve_results
         bm25_retrieved_files = retrieve_results

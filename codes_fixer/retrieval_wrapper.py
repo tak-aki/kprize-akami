@@ -9,7 +9,7 @@ import pandas as pd
 
 start_time = time.time()
 
-from .config import REPO_PATH, BATCH_SIZE 
+from .config import BATCH_SIZE 
 from .llm_selection import get_llm_selection
 from .bm25 import get_bm25_top_files
 from .llm_retrieve import get_llm_retrieval
@@ -17,13 +17,9 @@ from .utils import count_tokens, stringify_directory
 
 def retrieve(
     problem_statement: str,
-    repo_archive: io.BytesIO,
-    pip_packages_archive: io.BytesIO,
-    env_setup_cmds_templates: list[str],
     skip_prediction: bool = False,
-    save_result: bool = True,
-    max_file_lines: int = 10,
     output_dir: str | None = None,
+    directory: str = "repo",
 ) -> List[List[str]]:
     """
     retrieval性能をlocalで評価するためのwrapper関数
@@ -32,7 +28,6 @@ def retrieve(
     if skip_prediction:
         return None
 
-    directory: str = REPO_PATH
     directory_string = stringify_directory(directory)
 
     # selection_completion_texts, llm_selected_files = get_llm_selection(directory_string, problem_statement)

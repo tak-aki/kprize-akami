@@ -37,39 +37,35 @@ def clone_and_checkout(repo: str, commit_hash: str, repo_dir: str):
             stderr=subprocess.DEVNULL,
         )
     except subprocess.CalledProcessError:
-        pass
-
-    try:
-        subprocess.run(["git", "stash"], cwd=repo_dir, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.run(
-            ["git", "checkout", commit_hash],
-            cwd=repo_dir,
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    # ここでもエラーが出たら一度ディレクトリを削除し、cloneからやり直す
-    except subprocess.CalledProcessError:
-        pass
-
-    try:
-        subprocess.run(["rm", "-rf", repo_dir], check=True)
-        subprocess.run(
-            ["git", "clone", repo_url, repo_dir],
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        subprocess.run(
-            ["git", "checkout", commit_hash],
-            cwd=repo_dir,
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    # それでもエラーが出たらエラーを投げる
-    except subprocess.CalledProcessError:
-        raise
+        try:
+            subprocess.run(["git", "stash"], cwd=repo_dir, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(
+                ["git", "checkout", commit_hash],
+                cwd=repo_dir,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        # ここでもエラーが出たら一度ディレクトリを削除し、cloneからやり直す
+        except subprocess.CalledProcessError:
+            try:
+                subprocess.run(["rm", "-rf", repo_dir], check=True)
+                subprocess.run(
+                    ["git", "clone", repo_url, repo_dir],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                subprocess.run(
+                    ["git", "checkout", commit_hash],
+                    cwd=repo_dir,
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            # それでもエラーが出たらエラーを投げる
+            except subprocess.CalledProcessError:
+                raise
 
 def find_gold_files(patch:str) -> List[str]:
     try: 

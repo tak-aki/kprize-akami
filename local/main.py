@@ -9,8 +9,7 @@ from typing import cast
 import docker
 import numpy as np
 
-from codes_fixer.config import llm_model_pth
-from codes_fixer.submit import REPO_PATH, predict_inner
+from codes_fixer.submit import predict_inner
 from local.src.setup import clone_and_checkout, setup_data
 from local.src.utils import save_json, set_seed
 from swebench.harness.constants import SWEbenchInstance
@@ -34,6 +33,7 @@ def main():
     dataset_name = "princeton-nlp/SWE-bench"
     num_instances = 100
     seed = 1029
+    REPO_PATH = "repo"
 
     start_time = time.time()
     set_seed(seed)
@@ -119,7 +119,7 @@ def main():
         test_spec = make_test_spec(instance, namespace="swebench", instance_image_tag="latest")
         prediction = {
             "instance_id": instance_id,
-            "model_name_or_path": llm_model_pth,
+            "model_name_or_path": None,
             "model_patch": patch,
         }
 

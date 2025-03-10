@@ -119,7 +119,7 @@ def main():
         test_spec = make_test_spec(instance, namespace="swebench", instance_image_tag="latest")
         prediction = {
             "instance_id": instance_id,
-            "model_name_or_path": None,
+            "model_name_or_path": "dummy/model",
             "model_patch": patch,
         }
 

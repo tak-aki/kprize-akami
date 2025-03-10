@@ -54,7 +54,7 @@ def predict_inner(
     if skip_prediction:
         return None
     
-    easy_probs, model = get_easy_probs([problem_statement], return_model=True)
+    easy_probs = get_easy_probs([problem_statement])
     easy_prob = easy_probs[0]
     # if easy_prob < difficulty_threshold:
     #     logger.info(f"Skipping prediction because the problem is too difficult (easy_prob={easy_prob:.2f})")
@@ -62,10 +62,7 @@ def predict_inner(
 
     directory_string = stringify_directory(directory)
 
-    selection_completion_texts, llm_selected_files = get_llm_selection(directory_string, problem_statement, model=model)
-    del model
-    gc.collect()
-    torch.cuda.empty_cache()
+    selection_completion_texts, llm_selected_files = get_llm_selection(directory_string, problem_statement)
 
     bm25_top_files = get_bm25_top_files(problem_statement, directory, top_k=30)
 
@@ -73,13 +70,10 @@ def predict_inner(
 
     llm_retrieval_completion_texts, llm_retrieved_files = get_llm_retrieval(problem_statement, directory, concat_files)
 
-    patch_completion_texts, patch_strings, model = get_patch_string(problem_statement, directory, llm_retrieved_files, directory_string, return_model=True)
+    patch_completion_texts, patch_strings = get_patch_string(problem_statement, directory, llm_retrieved_files, directory_string)
     verification_completion_texts_aggregated, judgments_aggregated = get_verification(
-        problem_statement, bm25_top_files, patch_strings, directory, model=model
+        problem_statement, bm25_top_files, patch_strings, directory
     )
-    del model
-    gc.collect()
-    torch.cuda.empty_cache()
 
     scores, patch_string = choose_patch_string(patch_strings, judgments_aggregated, directory)
 

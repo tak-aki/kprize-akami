@@ -1,10 +1,23 @@
 # patching.py
+import os
 from typing import Dict, List, Optional, Tuple
+import torch
 
-from vllm import RequestOutput, SamplingParams
+from vllm import RequestOutput, SamplingParams, LLM
 
-from .config import BATCH_SIZE, MAX_TOKENS, llm, tokenizer
-from .utils import count_tokens, extract_patch_string
+from .config import BATCH_SIZE, MAX_NUM_SEQS
+from .utils import count_tokens, extract_patch_string, load_file_content
+
+import logging
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+logger.propagate = False
 
 patching_prompt: str = """
 In this task, you will be provided with a software development issue from a real-world GitHub repository, along with the content of retrieved code files for modification. 
@@ -66,13 +79,55 @@ Reminder
 """.strip()
 
 
-def get_patch_string(problem_statement: str, candidate_file: List[dict], directory_string: str) -> Tuple[List[str], List[Optional[str]]]:
-    sampling_params: SamplingParams = SamplingParams(
-        temperature=0.6,  # randomness of the sampling
-        min_p=0.01,
-        skip_special_tokens=True,  # Whether to skip special tokens in the output
-        max_tokens=MAX_TOKENS,
-    )
+def get_patch_string(
+        problem_statement: str, 
+        codebase_path: str, 
+        candidate_file_list: List[List[str]], 
+        directory_string: str, 
+        model: Optional[dict] = None,
+        return_model: bool = False, 
+        ) -> Tuple[List[str], List[Optional[str]]]:
+    if model:
+        llm = model["llm"]
+        tokenizer = model["tokenizer"]
+        sampling_params = model["sampling_params"]
+        MAX_TOKENS = model["MAX_TOKENS"]
+        MAX_MODEL_LEN = model["MAX_MODEL_LEN"]
+    else:
+        ## Initialize LLM
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
+        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
+        if os.getenv("KAGGLE_KERNEL_RUN_TYPE") or os.getenv("KAGGLE_IS_COMPETITION_RERUN"):
+            llm_model_pth: str = "/kaggle/input/m/mtfall/deepseek-r1/transformers/deepseek-r1-distill-llama-70b-awq/1"
+            num_gpus: int = 4
+        else:
+            llm_model_pth: str = "Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ"
+            num_gpus: int = torch.cuda.device_count()
+
+        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, range(num_gpus)))
+        MAX_TOKENS: int = 4096
+        MAX_MODEL_LEN: int = 32_768
+
+        llm: LLM = LLM(
+            model=llm_model_pth,
+            max_num_seqs=MAX_NUM_SEQS,  # Maximum number of sequences per iteration. Default is 256
+            max_model_len=MAX_MODEL_LEN,  # Model context length
+            trust_remote_code=True,  # Trust remote code (e.g., from HuggingFace) when downloading the model and tokenizer
+            tensor_parallel_size=num_gpus,  # The number of GPUs to use for distributed execution with tensor parallelism
+            gpu_memory_utilization=0.95,  # The ratio (between 0 and 1) of GPU memory to reserve for the model
+            enable_prefix_caching=True, 
+            seed=2024,
+        )
+        tokenizer = llm.get_tokenizer()
+
+        sampling_params: SamplingParams = SamplingParams(
+            temperature=0.6,  # randomness of the sampling
+            min_p=0.01,
+            skip_special_tokens=True,  # Whether to skip special tokens in the output
+            max_tokens=MAX_TOKENS,
+        )
+
     list_of_messages = [
         [
             {
@@ -80,30 +135,34 @@ def get_patch_string(problem_statement: str, candidate_file: List[dict], directo
                 "content": patching_prompt.format(
                     problem_statement=problem_statement[:20_000],
                     # directory_string=directory_string[:30_000],
-                    file_path=candidate_file[0]["file_path"][:1000],
-                    file_content=candidate_file[0]["file_content"][:100_000],
+                    file_path=candidate_files[0],
+                    file_content=load_file_content(codebase_path, candidate_files[0], with_line_numbers=True),
                 ),
             },
         ]
-        for _ in range(BATCH_SIZE)
+        for candidate_files in candidate_file_list
     ]
 
     prompt_texts: List[str] = [
         (
             tokenizer.apply_chat_template(conversation=messages, tokenize=False, add_generation_prompt=True)  # type: ignore
         )
-        + "<think>\n"
         for messages in list_of_messages
     ]
-    # print(prompt_texts)
+    # logger.info(prompt_texts)
+    logger.info(f"prompt_texts token length: {[count_tokens(text, tokenizer) for text in prompt_texts]}")
 
-    print("get_patch_string", [count_tokens(text, tokenizer) for text in prompt_texts])
+    inference_idx_to_input_idx: list[int] = [
+        input_idx
+        for input_idx, text in enumerate(prompt_texts)
+        if count_tokens(text, tokenizer) < (MAX_MODEL_LEN - 100) # 100 is a buffer
+    ]
+    prompt_texts = [prompt_texts[input_idx] for input_idx in inference_idx_to_input_idx]
+    logger.info(f"inference_idx_to_input_idx: {inference_idx_to_input_idx}]")
+
     request_outputs: list[RequestOutput] = llm.generate(prompt_texts, sampling_params=sampling_params)
     response_texts_from_inference: List[str] = [request_output.outputs[0].text for request_output in request_outputs]
-    print(
-        "get_patch_string",
-        [count_tokens(text, tokenizer) for text in response_texts_from_inference],
-    )
+    logger.info(f"response_texts_from_inference token length : {[count_tokens(text, tokenizer) for text in response_texts_from_inference]}")
     completion_texts_from_inference = [
         prompt_text + response_text for prompt_text, response_text in zip(prompt_texts, response_texts_from_inference)
     ]
@@ -113,10 +172,24 @@ def get_patch_string(problem_statement: str, candidate_file: List[dict], directo
 
     completion_texts: list[str] = ["" for _ in range(BATCH_SIZE)]
     patch_strings: List[Optional[str]] = [None for _ in range(BATCH_SIZE)]
-    for input_idx, (completion_text, patch_string) in enumerate(
+    for inference_idx, (completion_text, patch_string) in enumerate(
         zip(completion_texts_from_inference, patch_strings_from_inference)
     ):
+        input_idx = inference_idx_to_input_idx[inference_idx]
         completion_texts[input_idx] = completion_text
         patch_strings[input_idx] = patch_string
 
-    return completion_texts, patch_strings
+    if return_model:
+        return [
+            completion_texts, 
+            patch_strings, 
+            {
+                "llm": llm,
+                "tokenizer": tokenizer,
+                "sampling_params": sampling_params,
+                "MAX_TOKENS": MAX_TOKENS,
+                "MAX_MODEL_LEN": MAX_MODEL_LEN,
+            }
+        ]
+    else:
+        return completion_texts, patch_strings

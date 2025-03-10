@@ -7,7 +7,7 @@ import json
 
 from vllm import RequestOutput, SamplingParams, LLM
 import torch
-from .utils import count_tokens
+from .utils import count_tokens, load_file_content
 from .config import BATCH_SIZE, MAX_NUM_SEQS
 
 import logging
@@ -225,20 +225,6 @@ def extract_retrieved_files(response_text: str) -> List[str]:
             "files for editing": []
         }
     return files["files for editing"]
-
-def load_file_content(codebase_path: str, file_path_rel: str) -> str:
-    """
-    Loads the content of a file.
-    """
-    file_path = os.path.join(codebase_path, file_path_rel)
-    if not os.path.exists(file_path):
-        logger.info(f"File not found: {file_path}")
-        return ""
-    if not os.path.isfile(file_path):
-        logger.info(f"Not a file: {file_path}")
-        return ""
-    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-        return f.read()
 
 def get_llm_retrieval(problem_statement: str, codebase_path: str, candidate_file_batch: List[dict]):
 

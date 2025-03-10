@@ -1,12 +1,27 @@
+import os
+import re
+import xml.etree.ElementTree as ET
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import unidiff
-from vllm import RequestOutput, SamplingParams
+import torch
+from vllm import RequestOutput, SamplingParams, LLM
 
-from .config import BATCH_SIZE, MAX_TOKENS, REPO_PATH, VALIDATION_COPY_COUNT, llm, tokenizer
+from .config import BATCH_SIZE, MAX_NUM_SEQS, VALIDATION_COPY_COUNT
 from .utils import count_tokens
+
+import logging
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+logger.propagate = False
 
 verifying_prompt: str = """
 This is the problem statement.
@@ -17,17 +32,35 @@ This is the proposed patch to fix the problem.
 
 {patch_string}
 
-Evaluate whether the patch works
-- The patch fully fixes the problem described in the problem statement.
-- The patch does not cause side effects and make any other tests fail.
+Evaluate each item below with yes or no.
+1. Completeness of modification
+This patch completely fixes the issue mentioned in the problem statement.
+2. Side effects
+The patch does not cause any side effects or cause other tests to fail.
+3. Non-interference with testing
+The patch does not modify any test files.
 
-End your response with exactly either of
-- <label>Yes</label>, this fixes the problem.
-- <label>No</label>, this does not fix the problem.
+Return the strings of evaluation result in this format
+
+<root>
+    <entry>
+        <items>Completeness of modification</items>
+        <label>Yes</label>
+    </entry>
+    <entry>
+        <items>Side effects</items>
+        <label>No</label>
+    </entry>
+    <entry>
+        <items>Non-interference with testing</items>
+        <label>Yes</label>
+    </entry>
+</root>
 
 Reminder
 - Only evaluate, do not provide suggestion on how to fix.
-- Remember to write exactly either of <label>Yes</label> or <label>No</label> in the last line
+- Enter the exact title of the evaluation item in each item element. No other characters are allowed.
+- Enter strictly yes or no for each label element. No other characters are allowed.
 """.strip()
 
 
@@ -46,7 +79,7 @@ def is_valid_patch_format(patch_string: str) -> bool:
     return True
 
 
-def patch_dry_run_succeeds(patch_string: str, repo_path: str = REPO_PATH, timeout: int = 60) -> bool:
+def patch_dry_run_succeeds(patch_string: str, repo_path: str, timeout: int = 60) -> bool:
     """
     A robust check if the patch will proceed without any errors.
     Should be run after `is_valid_patch_format()`: the patch
@@ -68,9 +101,48 @@ def patch_dry_run_succeeds(patch_string: str, repo_path: str = REPO_PATH, timeou
     except Exception:
         return False
 
+def extract_evaluation_results(text):
+    """
+    テキストから評価結果を抽出する。
+    Output:
+    evaluation_results: dict
+        評価結果の辞書。キーはitemsの内容、値はlabelの内容。
+    num_yes: int
+        labelが"Yes"の数。
+    """
+    # テキストから<root>...</root>の部分を抽出
+    match = re.search(r'<root>.*</root>', text, re.DOTALL)
+    if not match:
+        # raise ValueError("XML部分が見つかりません。")
+        return {}, 0
+
+    xml_content = match.group(0)
+
+    try:
+        # XMLを解析
+        root = ET.fromstring(xml_content)
+    except ET.ParseError as e:
+        # raise ValueError(f"XMLの解析中にエラーが発生しました: {e}"
+        return {}, 0
+
+    evaluation_results = {}
+    num_yes = 0
+    for entry in root.findall('entry'):
+        item = entry.find('items')
+        label = entry.find('label')
+        if item is not None and label is not None:
+            evaluation_results[item.text.strip()] = label.text.strip()
+            if label.text.strip() == "Yes":
+                num_yes += 1
+        # else:
+        #     raise ValueError("entry内にitemsまたはlabelが見つかりません。")
+
+    return evaluation_results, num_yes
 
 def choose_patch_string(
-    patch_strings: list[Optional[str]], judgments_aggregated: List[List[bool]], repo_path: str
+    patch_strings: list[Optional[str]], 
+    judgments_aggregated: List[List[int]], 
+    repo_path: str, 
 ) -> tuple[list[int], Optional[str]]:
     best_score = -4
     best_patch_string = None
@@ -92,7 +164,7 @@ def choose_patch_string(
             scores.append(score)
             continue
 
-        score = judgments.count(True)
+        score = sum(judgments)
         scores.append(score)
 
         if score > best_score:
@@ -107,13 +179,48 @@ def get_verification(
     candidate_file: List[dict],
     patch_strings: List[Optional[str]],
     repo_path: str,
+    model: Optional[dict] = None,
+    return_model: bool = False,
 ) -> Tuple[List[List[str]], List[List[bool]]]:
-    sampling_params: SamplingParams = SamplingParams(
-        temperature=0.6,  # randomness of the sampling
-        min_p=0.01,
-        skip_special_tokens=True,  # Whether to skip special tokens in the output
-        max_tokens=MAX_TOKENS,
-    )
+    if model:
+        llm = model["llm"]
+        tokenizer = model["tokenizer"]
+        sampling_params = model["sampling_params"]
+        MAX_TOKENS = model["MAX_TOKENS"]
+        MAX_MODEL_LEN = model["MAX_MODEL_LEN"]
+    else:
+        ## Initialize LLM
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
+        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
+        if os.getenv("KAGGLE_KERNEL_RUN_TYPE") or os.getenv("KAGGLE_IS_COMPETITION_RERUN"):
+            llm_model_pth: str = "/kaggle/input/m/mtfall/deepseek-r1/transformers/deepseek-r1-distill-llama-70b-awq/1"
+            num_gpus: int = 4
+        else:
+            llm_model_pth: str = "Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ"
+            num_gpus: int = torch.cuda.device_count()
+
+        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, range(num_gpus)))
+        MAX_TOKENS: int = 4096
+        MAX_MODEL_LEN: int = 32_768
+
+        llm: LLM = LLM(
+            model=llm_model_pth,
+            max_num_seqs=MAX_NUM_SEQS,  # Maximum number of sequences per iteration. Default is 256
+            max_model_len=MAX_MODEL_LEN,  # Model context length
+            trust_remote_code=True,  # Trust remote code (e.g., from HuggingFace) when downloading the model and tokenizer
+            tensor_parallel_size=num_gpus,  # The number of GPUs to use for distributed execution with tensor parallelism
+            gpu_memory_utilization=0.95,  # The ratio (between 0 and 1) of GPU memory to reserve for the model
+            enable_prefix_caching=True, 
+            seed=2024,
+        )
+        tokenizer = llm.get_tokenizer()
+        sampling_params: SamplingParams = SamplingParams(
+            temperature=0.6,  # randomness of the sampling
+            min_p=0.01,
+            skip_special_tokens=True,  # Whether to skip special tokens in the output
+            max_tokens=MAX_TOKENS,
+        )
 
     inference_idx_to_input_idx: list[int] = [
         input_idx
@@ -122,7 +229,7 @@ def get_verification(
         if patch_string is not None
         and is_valid_patch_format(patch_string) and patch_dry_run_succeeds(patch_string, repo_path)
     ]
-    print(inference_idx_to_input_idx)
+    logger.info(f"inference_idx_to_input_idx: {inference_idx_to_input_idx}")
 
     list_of_messages: List[List[Dict[str, str]]] = [
         [
@@ -144,23 +251,23 @@ def get_verification(
         + "<think>\n"
         for messages in list_of_messages
     ]
-    # print(prompt_texts)
+    # logger.info(prompt_texts)
 
-    print("get_verification", [count_tokens(text, tokenizer) for text in prompt_texts])
+    logger.info(f"prompt_texts token length: {[count_tokens(text, tokenizer) for text in prompt_texts]}")
     request_outputs: list[RequestOutput] = llm.generate(prompt_texts, sampling_params=sampling_params)
     response_texts: List[str] = [request_output.outputs[0].text for request_output in request_outputs]
-    print("get_verification", [count_tokens(text, tokenizer) for text in response_texts])
+    logger.info(f"response_texts_from_inference token length : {[count_tokens(text, tokenizer) for text in response_texts]}")
 
     completion_texts = [prompt_text + response_text for prompt_text, response_text in zip(prompt_texts, response_texts)]
-    judgments_flattened: List[bool] = ["<label>Yes</label>" in response_text for response_text in response_texts]
-    print(judgments_flattened)
+    judgments_flattened: List[dict] = [extract_evaluation_results(response_text) in response_text for response_text in response_texts]
+    logger.info(f"judgments_flattened: {judgments_flattened}")
 
-    judgments_aggregated: List[List[bool]] = [[] for _ in range(BATCH_SIZE)]
+    judgments_aggregated: List[List[int]] = [[] for _ in range(BATCH_SIZE)]
     completion_text_aggregated: List[List[str]] = [[] for _ in patch_strings]
     for inference_idx, (completion_text, judgement) in enumerate(zip(completion_texts, judgments_flattened)):
         input_idx = inference_idx_to_input_idx[inference_idx]
         completion_text_aggregated[input_idx].append(completion_text)
-        judgments_aggregated[input_idx].append(judgement)
-    print(judgments_aggregated)
+        judgments_aggregated[input_idx].append(judgement[1])
+    logger.info(f"num evaluation yes count: {judgments_aggregated}")
 
     return completion_text_aggregated, judgments_aggregated

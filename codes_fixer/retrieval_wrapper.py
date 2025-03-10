@@ -31,7 +31,7 @@ def retrieve(
     directory_string = stringify_directory(directory)
 
     selection_completion_texts, llm_selected_files = get_llm_selection(directory_string, problem_statement)
-    bm25_top_files = get_bm25_top_files(problem_statement, directory, top_k=30)\
+    bm25_top_files = get_bm25_top_files(problem_statement, directory, top_k=30)
 
     concat_files = [sf + [bf for bf in bm25_top_files if bf not in sf] for sf in llm_selected_files] # llm selectionにあるファイルはbm25から除去しつつ結合
 

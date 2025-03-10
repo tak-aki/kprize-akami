@@ -15,12 +15,14 @@ if not logger.handlers:
 logger.propagate = False
 
 class BM25:
-    def __init__(self, top_k=30):
+    def __init__(self, top_k=30, b=0.75):
         self.top_k = top_k
+        self.b = b
         self.retriever = None
 
     def fit(self, file_docs):
-        self.retriever = BM25Retriever.from_documents(file_docs, k=self.top_k)
+        bm25_params = {"b": self.b}
+        self.retriever = BM25Retriever.from_documents(file_docs, k=self.top_k, bm25_params=bm25_params)
 
     def get_rel_files(self, query: str) -> List[dict]:
         """

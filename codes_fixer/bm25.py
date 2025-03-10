@@ -1,4 +1,5 @@
 import os
+import re
 from typing import List
 from langchain_community.retrievers import BM25Retriever
 from langchain_community.docstore.document import Document
@@ -21,8 +22,12 @@ class BM25:
         self.retriever = None
 
     def fit(self, file_docs):
+        # 前処理関数の定義
+        def custom_preprocess(text):
+            # "/", "'", " ", "\t", "\n", ".", ",", "=", "(", ")"で分割
+            return re.split(r'[\/\'\"\ \t\n\.,=\(\)]', text)
         bm25_params = {"b": self.b}
-        self.retriever = BM25Retriever.from_documents(file_docs, k=self.top_k, bm25_params=bm25_params)
+        self.retriever = BM25Retriever.from_documents(file_docs, k=self.top_k, bm25_params=bm25_params, preprocess_func=custom_preprocess)
 
     def get_rel_files(self, query: str) -> List[dict]:
         """

@@ -259,7 +259,7 @@ def get_verification(
     logger.info(f"response_texts_from_inference token length : {[count_tokens(text, tokenizer) for text in response_texts]}")
 
     completion_texts = [prompt_text + response_text for prompt_text, response_text in zip(prompt_texts, response_texts)]
-    judgments_flattened: List[dict] = [extract_evaluation_results(response_text) in response_text for response_text in response_texts]
+    judgments_flattened: List[dict] = [extract_evaluation_results(response_text) for response_text in response_texts]
     logger.info(f"judgments_flattened: {judgments_flattened}")
 
     judgments_aggregated: List[List[int]] = [[] for _ in range(BATCH_SIZE)]

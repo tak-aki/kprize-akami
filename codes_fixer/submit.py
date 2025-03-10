@@ -10,6 +10,7 @@ import pandas as pd
 start_time = time.time()
 
 from .config import BATCH_SIZE, VALIDATION_COPY_COUNT
+from .difficulty import get_easy_probs
 from .llm_selection import get_llm_selection
 from .bm25 import get_bm25_top_files
 from .llm_retrieve import get_llm_retrieval
@@ -17,6 +18,16 @@ from .patching import get_patch_string
 from .utils import count_tokens, stringify_directory
 from .verifying import choose_patch_string, get_verification
 
+import logging
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+logger.propagate = False
 
 def predict_inner(
     problem_statement: str,
@@ -25,6 +36,7 @@ def predict_inner(
     env_setup_cmds_templates: list[str],
     skip_prediction: bool = False,
     save_result: bool = True,
+    difficulty_threshold: float = 0.5,
     max_file_lines: int = 10,
     output_dir: str | None = None,
     directory: str = "repo",
@@ -39,10 +51,18 @@ def predict_inner(
     """
     if skip_prediction:
         return None
+    
+    easy_probs, model = get_easy_probs([problem_statement], return_model=True)
+    easy_prob = easy_probs[0]
+    # if easy_prob < difficulty_threshold:
+    #     logger.info(f"Skipping prediction because the problem is too difficult (easy_prob={easy_prob:.2f})")
+    #     return None
 
     directory_string = stringify_directory(directory)
 
-    selection_completion_texts, llm_selected_files = get_llm_selection(directory_string, problem_statement)
+    selection_completion_texts, llm_selected_files = get_llm_selection(directory_string, problem_statement, model=model)
+    del model
+
     bm25_top_files = get_bm25_top_files(problem_statement, directory, top_k=30)
 
     concat_files = [sf + [bf for bf in bm25_top_files if bf not in sf] for sf in llm_selected_files] # llm selectionにあるファイルはbm25から除去しつつ結合
@@ -59,6 +79,7 @@ def predict_inner(
     if not os.getenv("KAGGLE_IS_COMPETITION_RERUN"):
         data = {
             "problem_statement": [problem_statement] * BATCH_SIZE,
+            "easy_prob": [easy_prob] * BATCH_SIZE,
             "llm_selection_completion_texts": selection_completion_texts,
             "llm_selected_files": llm_selected_files,
             "bm25_top_files": [bm25_top_files] * BATCH_SIZE,

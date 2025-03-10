@@ -169,6 +169,7 @@ def get_patch_string(
     patch_strings_from_inference: List[Optional[str]] = [
         extract_patch_string(response_text) for response_text in response_texts_from_inference
     ]
+    logger.info(f"is diff format output : {[s is not None for s in patch_strings_from_inference]}")
 
     completion_texts: list[str] = ["" for _ in range(BATCH_SIZE)]
     patch_strings: List[Optional[str]] = [None for _ in range(BATCH_SIZE)]

@@ -9,6 +9,7 @@
 patch.txt
 .vscode
 /logs
+/output_train
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

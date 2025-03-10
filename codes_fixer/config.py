@@ -22,11 +22,11 @@ warnings.simplefilter("ignore")
 
 # os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, range(num_gpus)))
 
-BATCH_SIZE: int = 6
+BATCH_SIZE: int = 4
 VALIDATION_COPY_COUNT: int = 1
 # MAX_TOKENS: int = 8192
 
-# MAX_NUM_SEQS: int = 6
+MAX_NUM_SEQS: int = 4
 # MAX_MODEL_LEN: int = 32_768
 
 

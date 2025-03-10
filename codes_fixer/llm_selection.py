@@ -6,7 +6,7 @@ import re
 import torch
 from vllm import RequestOutput, SamplingParams, LLM
 
-from .config import BATCH_SIZE 
+from .config import BATCH_SIZE, MAX_NUM_SEQS 
 from .utils import count_tokens 
 
 import logging
@@ -97,7 +97,6 @@ def get_llm_selection(directory_string: str, problem_statement: str) -> Tuple[Li
 
     MAX_TOKENS: int = 4096
 
-    MAX_NUM_SEQS: int = 6
     MAX_MODEL_LEN: int = 32_768
 
 

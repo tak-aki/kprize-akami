@@ -8,7 +8,7 @@ import json
 from vllm import RequestOutput, SamplingParams, LLM
 import torch
 from .utils import count_tokens
-from .config import BATCH_SIZE
+from .config import BATCH_SIZE, MAX_NUM_SEQS
 
 import logging
 logger = logging.getLogger(__name__)
@@ -234,6 +234,9 @@ def load_file_content(codebase_path: str, file_path_rel: str) -> str:
     if not os.path.exists(file_path):
         logger.info(f"File not found: {file_path}")
         return ""
+    if not os.path.isfile(file_path):
+        logger.info(f"Not a file: {file_path}")
+        return ""
     with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
         return f.read()
 
@@ -254,7 +257,6 @@ def get_llm_retrieval(problem_statement: str, codebase_path: str, candidate_file
 
     MAX_TOKENS: int = 2048
 
-    MAX_NUM_SEQS: int = 6
     MAX_MODEL_LEN: int = 65_536
 
 
@@ -307,7 +309,7 @@ def get_llm_retrieval(problem_statement: str, codebase_path: str, candidate_file
                 }
             }
         }
-        while count_tokens(json.dumps(prompt_json), tokenizer) > MAX_MODEL_LEN:
+        while count_tokens(json.dumps(prompt_json), tokenizer) > (MAX_MODEL_LEN - 100): # 100 is a buffer
             logger.info(
                 f"Exceeding token limit ({count_tokens(json.dumps(prompt_json), tokenizer)} > {MAX_MODEL_LEN}), remove last file and remaining files: {len(prompt_json['input']['retrieved file documentations'])-1}"
             )

@@ -2,8 +2,10 @@ import io
 import json
 import os
 import time
+import gc
 from pathlib import Path
 from typing import List
+import torch
 
 import pandas as pd
 
@@ -62,6 +64,8 @@ def predict_inner(
 
     selection_completion_texts, llm_selected_files = get_llm_selection(directory_string, problem_statement, model=model)
     del model
+    gc.collect()
+    torch.cuda.empty_cache()
 
     bm25_top_files = get_bm25_top_files(problem_statement, directory, top_k=30)
 
@@ -73,6 +77,9 @@ def predict_inner(
     verification_completion_texts_aggregated, judgments_aggregated = get_verification(
         problem_statement, bm25_top_files, patch_strings, directory, model=model
     )
+    del model
+    gc.collect()
+    torch.cuda.empty_cache()
 
     scores, patch_string = choose_patch_string(patch_strings, judgments_aggregated, directory)
 

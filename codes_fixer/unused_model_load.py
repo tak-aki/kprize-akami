@@ -1,8 +1,9 @@
-from vllm import LLM
-import torch
 import os
 
 def load70b():
+    from vllm import LLM
+    import torch
+
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
     MAX_MODEL_LEN: int = 32_768
@@ -28,6 +29,8 @@ def load70b():
     return None
 
 def load7b():
+    from vllm import LLM
+    import torch
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
     MAX_MODEL_LEN: int = 65_536

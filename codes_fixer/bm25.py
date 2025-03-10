@@ -71,6 +71,9 @@ def load_repository_docs(repo_path: str):
                 # 相対パスを取得
                 rel_path = os.path.relpath(file_path, start=repo_path)
 
+                # contentの冒頭にpath情報を追加
+                content = f"{rel_path}\n{content}"
+
                 # Documentのpage_content にテキスト、metadata にファイルのパス等を保持
                 doc = Document(
                     page_content=content,

@@ -1,4 +1,5 @@
 import os
+import re
 from typing import List
 from langchain_community.retrievers import BM25Retriever
 from langchain_community.docstore.document import Document
@@ -15,12 +16,18 @@ if not logger.handlers:
 logger.propagate = False
 
 class BM25:
-    def __init__(self, top_k=30):
+    def __init__(self, top_k=30, b=0.75):
         self.top_k = top_k
+        self.b = b
         self.retriever = None
 
     def fit(self, file_docs):
-        self.retriever = BM25Retriever.from_documents(file_docs, k=self.top_k)
+        # 前処理関数の定義
+        def custom_preprocess(text):
+            # "/", "'", " ", "\t", "\n", ".", ",", "=", "(", ")"で分割
+            return re.split(r'[\/\'\"\ \t\n\.,=\(\)]', text)
+        bm25_params = {"b": self.b}
+        self.retriever = BM25Retriever.from_documents(file_docs, k=self.top_k, bm25_params=bm25_params, preprocess_func=custom_preprocess)
 
     def get_rel_files(self, query: str) -> List[dict]:
         """
@@ -70,6 +77,9 @@ def load_repository_docs(repo_path: str):
 
                 # 相対パスを取得
                 rel_path = os.path.relpath(file_path, start=repo_path)
+
+                # contentの冒頭にpath情報を追加
+                content = f"{rel_path}\n{content}"
 
                 # Documentのpage_content にテキスト、metadata にファイルのパス等を保持
                 doc = Document(

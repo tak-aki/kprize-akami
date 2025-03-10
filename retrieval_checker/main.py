@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import shutil
 import time
 from datetime import datetime
@@ -9,7 +10,7 @@ from typing import cast, List
 import numpy as np
 import pandas as pd
 
-from codes_fixer.retrieval_wrapper import REPO_PATH, retrieve
+from codes_fixer.retrieval_wrapper import retrieve
 from retrieval_checker.src.setup import clone_and_checkout, setup_data, find_gold_files
 from retrieval_checker.src.utils import save_json, set_seed
 
@@ -35,17 +36,29 @@ def eval_retrieval(gold_files: List[str], retrieved_files: List[str]) -> dict:
     # Recall
     recall = true_positives / len(gold_set) if gold_set else 0
 
+    # MAP@30
+    average_precision = 0
+    relevant_docs_found = 0
+    for i, file in enumerate(retrieved_files[:30]):
+        if file in gold_set:
+            relevant_docs_found += 1
+            average_precision += relevant_docs_found / (i + 1)
+    map_30 = average_precision / min(len(gold_set), 30) if gold_set else 0
+
     return {
         "num_gold_files": len(gold_files),
         "num_retrieved_files": len(retrieved_files),
         "precision": precision,
-        "recall": recall,}
+        "recall": recall,
+        "map_30": map_30,
+        }
 
 def main():
     split = "test"  # train, test, dev
     dataset_name = "princeton-nlp/SWE-bench"
     num_instances = 100
     seed = 1029
+    REPO_PATH = "repo"
 
     start_time = time.time()
     set_seed(seed)
@@ -73,7 +86,8 @@ def main():
         patch = data["patch"]
         gold_files = find_gold_files(patch)
 
-        shutil.rmtree(REPO_PATH, ignore_errors=True)
+        repo_path = os.path.join(REPO_PATH, instance_id)
+        # shutil.rmtree(REPO_PATH, ignore_errors=True)
 
 
         logger.info("-----------------------------------------------------------------------------")
@@ -85,35 +99,34 @@ def main():
 
         # Setup
         logger.info(f"Setting up the environment for {instance_id}.")
-        clone_and_checkout(data["repo"], data["base_commit"], REPO_PATH)
+        clone_and_checkout(data["repo"], data["base_commit"], repo_path)
 
         # Predict the patch
         logger.info(f"Retrieve files for {instance_id}.")
         retrieve_results = retrieve(
             data["problem_statement"],
-            repo_archive=None,
-            pip_packages_archive=None,
-            env_setup_cmds_templates=None,
             skip_prediction=False,
             output_dir=result_dir,
+            directory=repo_path,
         )
-        llm_batch_selected_files, bm25_retrieved_files, llm_batch_retrieved_files = retrieve_results
+        # llm_batch_selected_files, bm25_retrieved_files, llm_batch_retrieved_files = retrieve_results
+        bm25_retrieved_files = retrieve_results
 
         # Evaluate
         results = []
-        for eval_i, selected_files in enumerate(llm_batch_selected_files):
-            logger.info(f"Evaluating the llm selection for {instance_id}. iter: {eval_i}")
-            eval_result = eval_retrieval(gold_files, selected_files)        
+        # for eval_i, selected_files in enumerate(llm_batch_selected_files):
+        #     logger.info(f"Evaluating the llm selection for {instance_id}. iter: {eval_i}")
+        #     eval_result = eval_retrieval(gold_files, selected_files)        
 
-            result = {
-                "instance_id": instance_id,
-                "gold_files": gold_files,
-                "retrieved_files": selected_files, 
-                "info": f"llm_{eval_i}",
-            } | eval_result
-            logger.info(f"Evaluation result: {result}")
-            results.append(result)
-        logger.info(f"Evaluating the BM25 retrieval for {instance_id}. ")
+        #     result = {
+        #         "instance_id": instance_id,
+        #         "gold_files": gold_files,
+        #         "retrieved_files": selected_files, 
+        #         "info": f"llm_{eval_i}",
+        #     } | eval_result
+        #     logger.info(f"Evaluation result: {result}")
+        #     results.append(result)
+        # logger.info(f"Evaluating the BM25 retrieval for {instance_id}. ")
         bm25_eval_result = eval_retrieval(gold_files, bm25_retrieved_files)
         result = {
             "instance_id": instance_id,
@@ -123,18 +136,18 @@ def main():
         } | bm25_eval_result
         logger.info(f"Evaluation result: {result}")
         results.append(result)
-        for eval_i, retrieved_files in enumerate(llm_batch_retrieved_files):
-            logger.info(f"Evaluating the retrieval for {instance_id}. iter: {eval_i}")
-            eval_result = eval_retrieval(gold_files, retrieved_files)        
+        # for eval_i, retrieved_files in enumerate(llm_batch_retrieved_files):
+        #     logger.info(f"Evaluating the retrieval for {instance_id}. iter: {eval_i}")
+        #     eval_result = eval_retrieval(gold_files, retrieved_files)        
 
-            result = {
-                "instance_id": instance_id,
-                "gold_files": gold_files,
-                "retrieved_files": retrieved_files, 
-                "info": f"llm_{eval_i}",
-            } | eval_result
-            logger.info(f"Evaluation result: {result}")
-            results.append(result)
+        #     result = {
+        #         "instance_id": instance_id,
+        #         "gold_files": gold_files,
+        #         "retrieved_files": retrieved_files, 
+        #         "info": f"llm_{eval_i}",
+        #     } | eval_result
+        #     logger.info(f"Evaluation result: {result}")
+        #     results.append(result)
         result_path = result_dir / "result.json"
         save_json(results, result_path)
         result_list += results

@@ -5,7 +5,7 @@ import warnings
 import torch
 from vllm import LLM
 
-REPO_PATH: str = "repo"
+# REPO_PATH: str = "repo"
 
 warnings.simplefilter("ignore")
 

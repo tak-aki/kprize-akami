@@ -9,6 +9,8 @@ from vllm import SamplingParams, LLM
 from transformers import LogitsProcessor
 from vllm.lora.request import LoRARequest
 
+from .config import model_32b
+
 import logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -60,48 +62,21 @@ def make_inference_prompt(problem_statement, tokenizer):
     return prompt
 
 
-def get_easy_probs(problem_statements: list[str], return_model: bool=False) -> np.ndarray:
+def get_easy_probs(problem_statements: list[str]) -> np.ndarray:
 
     ## Initialize LLM
-    os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
     if os.getenv("KAGGLE_KERNEL_RUN_TYPE") or os.getenv("KAGGLE_IS_COMPETITION_RERUN"):
-        llm_model_pth: str = "/kaggle/input/m/mtfall/deepseek-r1/transformers/deepseek-r1-distill-llama-70b-awq/1"
         difficulty_lora_path: str = (
-            "/kaggle/input/kprize-akami-difficulty-model/output_train-exp003-70b_003-fold0-checkpoint-100"
+            "/kaggle/input/kprize-akami-difficulty-model/output_train-exp004-003-fold0-checkpoint-100"
         )
-        num_gpus: int = 4
     else:
-        llm_model_pth: str = "Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ"
-        difficulty_lora_path: str = "/home/takuya.akiyama/work/kprize-akami/output_train/output_train-exp004-70b_003-fold0-checkpoint-100"
-        num_gpus: int = torch.cuda.device_count()
+        difficulty_lora_path: str = "/home/takuya.akiyama/work/kprize-akami/output_train/output_train-exp004-003-fold0-checkpoint-100"
 
-    os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, range(num_gpus)))
-    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
-
-    MAX_NUM_SEQS: int = 6
-    MAX_MODEL_LEN: int = 32_768
-
-    llm: LLM = LLM(
-        model=llm_model_pth,
-        max_num_seqs=MAX_NUM_SEQS,  # Maximum number of sequences per iteration. Default is 256
-        max_model_len=MAX_MODEL_LEN,  # Model context length
-        trust_remote_code=True,  # Trust remote code (e.g., from HuggingFace) when downloading the model and tokenizer
-        tensor_parallel_size=num_gpus,  # The number of GPUs to use for distributed execution with tensor parallelism
-        gpu_memory_utilization=0.95,  # The ratio (between 0 and 1) of GPU memory to reserve for the model
-        enable_prefix_caching=True, 
-        enable_lora=True,
-        max_lora_rank=32,
-        seed=2024,
-    )
-
-    tokenizer = llm.get_tokenizer()
-
-    prompt_text_list = [make_inference_prompt(problem_statement, tokenizer) for problem_statement in problem_statements]
+    prompt_text_list = [make_inference_prompt(problem_statement, model_32b["tokenizer"]) for problem_statement in problem_statements]
 
     keep_ids = []
     for x in TOKENS:
-        c = tokenizer.encode(x, add_special_tokens=False)[0]
+        c = model_32b["tokenizer"].encode(x, add_special_tokens=False)[0]
         keep_ids.append(c)
 
     class DigitLogitsProcessor(LogitsProcessor):
@@ -112,7 +87,7 @@ def get_easy_probs(problem_statements: list[str], return_model: bool=False) -> n
             scores[self.allowed_ids] += 100
             return scores
 
-    logits_processors = [DigitLogitsProcessor(tokenizer)]
+    logits_processors = [DigitLogitsProcessor(model_32b["tokenizer"])]
     sampling_params = SamplingParams(
         n=1,  # Number of output sequences to return for each prompt.
         top_p=0.9,  # Float that controls the cumulative probability of the top tokens to consider.
@@ -123,7 +98,7 @@ def get_easy_probs(problem_statements: list[str], return_model: bool=False) -> n
         logits_processors=logits_processors,
         logprobs=5,
     )
-    responses = llm.generate(
+    responses = model_32b["llm"].generate(
         prompt_text_list,
         sampling_params=sampling_params,
         use_tqdm=True,
@@ -155,16 +130,4 @@ def get_easy_probs(problem_statements: list[str], return_model: bool=False) -> n
     easy_probs = pred_array[:, 0]
     logger.info(f"easy_probs={easy_probs}")
 
-    if return_model:
-        return [
-            easy_probs, 
-            {
-                "llm": llm,
-                "tokenizer": tokenizer,
-                "sampling_params": None,
-                "MAX_TOKENS": None,
-                "MAX_MODEL_LEN": MAX_MODEL_LEN,
-            }
-        ]
-    else:
-        return easy_probs
+    return easy_probs

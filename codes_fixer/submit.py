@@ -128,14 +128,22 @@ def predict_inner(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
+    print("Start running the predictor. ")
+
     parser.add_argument('problem_filepath')
     parser.add_argument('patch_filepath')
+    parser.add_argument('--skip_prediction')
     parser.add_argument('--output_dir')
     parser.add_argument('--directory', default='repo')
 
     args = parser.parse_args()
     problem_filepath = args.problem_filepath
     patch_filepath = args.patch_filepath
+    skip_prediction = args.skip_prediction
+    if skip_prediction == "True":
+        skip_prediction = True
+    else:
+        skip_prediction = False
     output_dir = args.output_dir
     directory = args.directory
     
@@ -145,6 +153,7 @@ if __name__ == "__main__":
     predict_inner(
         problem_statement=problem_statement,
         patch_filepath=patch_filepath,
+        skip_prediction=skip_prediction,
         output_dir=output_dir,
         directory=directory
     )

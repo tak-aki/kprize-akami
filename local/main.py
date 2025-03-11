@@ -106,6 +106,8 @@ def main():
         patch_filepath = output_dir / "patch.diff"
         with open(problem_filepath, "w") as f:
             f.write(instance["problem_statement"])
+        if(os.path.exists(patch_filepath)):
+            os.remove(patch_filepath)
             
         python_executable = sys.executable
         process = subprocess.Popen(

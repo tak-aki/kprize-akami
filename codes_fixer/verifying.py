@@ -229,7 +229,7 @@ def get_verification(
         if patch_string is not None
         and is_valid_patch_format(patch_string) and patch_dry_run_succeeds(patch_string, repo_path)
     ]
-    logger.info(f"inference_idx_to_input_idx: {inference_idx_to_input_idx}")
+    print(f"inference_idx_to_input_idx: {inference_idx_to_input_idx}")
 
     list_of_messages: List[List[Dict[str, str]]] = [
         [
@@ -251,16 +251,16 @@ def get_verification(
         + "<think>\n"
         for messages in list_of_messages
     ]
-    # logger.info(prompt_texts)
+    # print(prompt_texts)
 
-    logger.info(f"prompt_texts token length: {[count_tokens(text, tokenizer) for text in prompt_texts]}")
+    print(f"prompt_texts token length: {[count_tokens(text, tokenizer) for text in prompt_texts]}")
     request_outputs: list[RequestOutput] = llm.generate(prompt_texts, sampling_params=sampling_params)
     response_texts: List[str] = [request_output.outputs[0].text for request_output in request_outputs]
-    logger.info(f"response_texts_from_inference token length : {[count_tokens(text, tokenizer) for text in response_texts]}")
+    print(f"response_texts_from_inference token length : {[count_tokens(text, tokenizer) for text in response_texts]}")
 
     completion_texts = [prompt_text + response_text for prompt_text, response_text in zip(prompt_texts, response_texts)]
     judgments_flattened: List[dict] = [extract_evaluation_results(response_text) for response_text in response_texts]
-    logger.info(f"judgments_flattened: {judgments_flattened}")
+    print(f"judgments_flattened: {judgments_flattened}")
 
     judgments_aggregated: List[List[int]] = [[] for _ in range(BATCH_SIZE)]
     completion_text_aggregated: List[List[str]] = [[] for _ in patch_strings]
@@ -268,6 +268,6 @@ def get_verification(
         input_idx = inference_idx_to_input_idx[inference_idx]
         completion_text_aggregated[input_idx].append(completion_text)
         judgments_aggregated[input_idx].append(judgement[1])
-    logger.info(f"num evaluation yes count: {judgments_aggregated}")
+    print(f"num evaluation yes count: {judgments_aggregated}")
 
     return completion_text_aggregated, judgments_aggregated

@@ -54,12 +54,14 @@ def predict_inner(
         env_setup_cmds_templates: Commands necessary for installing the pip_packages_archive.
     """
     if skip_prediction:
+        print("Skipping prediction")
         return None
+    print("Start running the inner predictor.")
     
     easy_probs = get_easy_probs([problem_statement])
     easy_prob = easy_probs[0]
     if easy_prob < difficulty_threshold:
-        logger.info(f"Skipping prediction because the problem is too difficult (easy_prob={easy_prob:.2f})")
+        print(f"Skipping prediction because the problem is too difficult (easy_prob={easy_prob:.2f})")
         return None
 
     directory_string = stringify_directory(directory)

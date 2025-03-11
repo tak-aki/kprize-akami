@@ -153,7 +153,7 @@ def get_easy_probs(problem_statements: list[str], return_model: bool=False) -> n
     pred_array = np.array(results).reshape((-1, 3))
 
     easy_probs = pred_array[:, 0]
-    logger.info(f"easy_probs={easy_probs}")
+    print(f"easy_probs={easy_probs}")
 
     if return_model:
         return [

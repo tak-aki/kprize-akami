@@ -149,8 +149,8 @@ def get_patch_string(
         )
         for messages in list_of_messages
     ]
-    # logger.info(prompt_texts)
-    logger.info(f"prompt_texts token length: {[count_tokens(text, tokenizer) for text in prompt_texts]}")
+    # print(prompt_texts)
+    print(f"prompt_texts token length: {[count_tokens(text, tokenizer) for text in prompt_texts]}")
 
     inference_idx_to_input_idx: list[int] = [
         input_idx
@@ -158,18 +158,18 @@ def get_patch_string(
         if count_tokens(text, tokenizer) < (MAX_MODEL_LEN - 100) # 100 is a buffer
     ]
     prompt_texts = [prompt_texts[input_idx] for input_idx in inference_idx_to_input_idx]
-    logger.info(f"inference_idx_to_input_idx: {inference_idx_to_input_idx}]")
+    print(f"inference_idx_to_input_idx: {inference_idx_to_input_idx}]")
 
     request_outputs: list[RequestOutput] = llm.generate(prompt_texts, sampling_params=sampling_params)
     response_texts_from_inference: List[str] = [request_output.outputs[0].text for request_output in request_outputs]
-    logger.info(f"response_texts_from_inference token length : {[count_tokens(text, tokenizer) for text in response_texts_from_inference]}")
+    print(f"response_texts_from_inference token length : {[count_tokens(text, tokenizer) for text in response_texts_from_inference]}")
     completion_texts_from_inference = [
         prompt_text + response_text for prompt_text, response_text in zip(prompt_texts, response_texts_from_inference)
     ]
     patch_strings_from_inference: List[Optional[str]] = [
         extract_patch_string(response_text) for response_text in response_texts_from_inference
     ]
-    logger.info(f"is diff format output : {[s is not None for s in patch_strings_from_inference]}")
+    print(f"is diff format output : {[s is not None for s in patch_strings_from_inference]}")
 
     completion_texts: list[str] = ["" for _ in range(BATCH_SIZE)]
     patch_strings: List[Optional[str]] = [None for _ in range(BATCH_SIZE)]

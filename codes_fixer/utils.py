@@ -74,10 +74,10 @@ def load_file_content(codebase_path: str, file_path_rel: str, with_line_numbers:
     """
     file_path = os.path.join(codebase_path, file_path_rel)
     if not os.path.exists(file_path):
-        logger.info(f"File not found: {file_path}")
+        print(f"File not found: {file_path}")
         return ""
     if not os.path.isfile(file_path):
-        logger.info(f"Not a file: {file_path}")
+        print(f"Not a file: {file_path}")
         return ""
     with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
         content =  f.read()

@@ -210,7 +210,7 @@ def parse_python_file(source, file_path):
         }
         return result
     except Exception as e:
-        logger.info(f"Error parsing file {file_path}: {e}")
+        print(f"Error parsing file {file_path}: {e}")
         return None
 
 def extract_retrieved_files(response_text: str) -> List[str]:
@@ -220,7 +220,7 @@ def extract_retrieved_files(response_text: str) -> List[str]:
     try:
         files = json.loads(response_text)
     except json.JSONDecodeError:
-        logger.info("Error parsing JSON response.")
+        print("Error parsing JSON response.")
         files = {
             "files for editing": []
         }
@@ -273,10 +273,10 @@ def get_llm_retrieval(problem_statement: str, codebase_path: str, candidate_file
         file_documentations = [parse_python_file(load_file_content(codebase_path, file_path), file_path) for file_path in candidate_file]
         #file_documentationsからNoneを除外
         file_documentations = [f for f in file_documentations if f is not None]
-        logger.info(f"num valid files: {len(file_documentations)}")
+        print(f"num valid files: {len(file_documentations)}")
 
         if len(file_documentations) == 0:
-            logger.info("All files are invalid")
+            print("All files are invalid")
             list_of_retrieve_prompt.append("")
             continue
         prompt_json = {
@@ -296,7 +296,7 @@ def get_llm_retrieval(problem_statement: str, codebase_path: str, candidate_file
             }
         }
         while count_tokens(json.dumps(prompt_json), tokenizer) > (MAX_MODEL_LEN - 100): # 100 is a buffer
-            logger.info(
+            print(
                 f"Exceeding token limit ({count_tokens(json.dumps(prompt_json), tokenizer)} > {MAX_MODEL_LEN}), remove last file and remaining files: {len(prompt_json['input']['retrieved file documentations'])-1}"
             )
             del prompt_json["input"]["retrieved file documentations"][-1]
@@ -316,10 +316,10 @@ def get_llm_retrieval(problem_statement: str, codebase_path: str, candidate_file
         for messages in list_of_messages
     ]
 
-    logger.info(f"prompt_texts token length {[count_tokens(text, tokenizer) for text in prompt_texts]}")
+    print(f"prompt_texts token length {[count_tokens(text, tokenizer) for text in prompt_texts]}")
     request_outputs: list[RequestOutput] = llm.generate(prompt_texts, sampling_params=sampling_params)
     response_texts_from_inference: List[str] = [request_output.outputs[0].text for request_output in request_outputs]
-    logger.info(f"response_texts_from_inference token length : {[count_tokens(text, tokenizer) for text in response_texts_from_inference]}")
+    print(f"response_texts_from_inference token length : {[count_tokens(text, tokenizer) for text in response_texts_from_inference]}")
     completion_texts_from_inference = [
         prompt_text + response_text for prompt_text, response_text in zip(prompt_texts, response_texts_from_inference)
     ]
@@ -335,6 +335,6 @@ def get_llm_retrieval(problem_statement: str, codebase_path: str, candidate_file
         completion_texts[input_idx] = completion_text
         retrieved_files[input_idx] = retrieved_file
 
-    logger.info(f"num retrieved files: {[len(f) for f in retrieved_files]}")
+    print(f"num retrieved files: {[len(f) for f in retrieved_files]}")
 
     return completion_texts, retrieved_files

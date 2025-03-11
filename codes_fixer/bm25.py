@@ -97,12 +97,12 @@ def get_bm25_top_files(issue: str, codebase_path: str, top_k: int = 30) -> List[
     """
     Retrieves top-k relevant files using BM25 and a fine-tuned retriever model.
     """
-    logger.info(f"Retrieving top {top_k} files using BM25 for the given issue.")
+    print(f"Retrieving top {top_k} files using BM25 for the given issue.")
     file_docs = load_repository_docs(codebase_path)
 
     bm25 = BM25(top_k)
     bm25.fit(file_docs)
     top_files = bm25.get_rel_files(issue)
-    logger.info(f"Retrieved {len(top_files)} files.")
+    print(f"Retrieved {len(top_files)} files.")
 
     return top_files

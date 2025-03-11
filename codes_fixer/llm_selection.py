@@ -75,8 +75,8 @@ def extract_file_path(xml_content: str) -> Dict[str, List[str]]:
                 if filepath_text:
                     parsed_data.append(filepath_text)
         except Exception as e:
-            logger.info(f"Error parsing output {e}")
-            logger.info(xml_content)
+            print(f"Error parsing output {e}")
+            print(xml_content)
             return [] 
     return parsed_data
 
@@ -138,12 +138,12 @@ def get_llm_selection(directory_string: str, problem_statement: str, model: Opti
         tokenizer.apply_chat_template(conversation=messages, tokenize=False, add_generation_prompt=True) + "<think>\n"
         for messages in list_of_messages
     ]
-    logger.info(f"prompt_texts token length: {[count_tokens(text, tokenizer) for text in prompt_texts]}")
+    print(f"prompt_texts token length: {[count_tokens(text, tokenizer) for text in prompt_texts]}")
     request_outputs: List[RequestOutput] = llm.generate(prompt_texts, sampling_params=sampling_params)
     if not request_outputs:
         return [], []
     response_texts = [output.outputs[0].text for output in request_outputs]
-    logger.info(f"response_texts token length: {[count_tokens(text, tokenizer) for text in response_texts]}")
+    print(f"response_texts token length: {[count_tokens(text, tokenizer) for text in response_texts]}")
     completion_texts = [pt + rt for pt, rt in zip(prompt_texts, response_texts)]
     extracted_files = [extract_file_path(rt) for rt in response_texts]
     return completion_texts, extracted_files

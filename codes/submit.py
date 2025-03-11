@@ -10,6 +10,7 @@ import pandas as pd
 start_time = time.time()
 
 from .config import REPO_PATH, VALIDATION_COPY_COUNT, tokenizer
+from .difficulty import get_easy_probs
 from .fetch_file import fetch_file_contents
 from .patching import get_patch_string
 from .selection_query import get_selection_query
@@ -24,7 +25,7 @@ def predict_inner(
     env_setup_cmds_templates: list[str],
     skip_prediction: bool = False,
     save_result: bool = True,
-    max_file_lines: int = 10,
+    difficulty_threshold: float = 0.5,
     output_dir: str | None = None,
 ) -> str:
     """
@@ -39,6 +40,12 @@ def predict_inner(
         return None
 
     directory: str = REPO_PATH
+
+    easy_prob = get_easy_probs([problem_statement])[0]
+    print(f"easy_prob={easy_prob:.2f}")
+    if easy_prob < difficulty_threshold:
+        print(f"Skipping prediction because the problem is too difficult (easy_prob={easy_prob:.2f})")
+        return None
 
     directory_string = stringify_directory(directory)
 
@@ -56,6 +63,7 @@ def predict_inner(
     if not os.getenv("KAGGLE_IS_COMPETITION_RERUN"):
         data = {
             "problem_statement": [problem_statement] * len(file_queries),
+            "easy_prob": [easy_prob] * len(file_queries),
             "selection_completion_text": selection_completion_texts,
             "selection_completion_length": [
                 count_tokens(completion_text, tokenizer) for completion_text in selection_completion_texts

@@ -11,13 +11,18 @@ warnings.simplefilter("ignore")
 
 
 ## Initialize LLM
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 if os.getenv("KAGGLE_KERNEL_RUN_TYPE") or os.getenv("KAGGLE_IS_COMPETITION_RERUN"):
-    llm_model_pth: str = "/kaggle/input/deepseek-r1/transformers/deepseek-r1-distill-qwen-32b-awq/1"
+    llm_model_pth: str = "/kaggle/input/deepseek-r1/transformers/deepseek-r1-distill-llama-70b-awq/1"
+    difficulty_lora_path: str = (
+        "/kaggle/input/kprize-akami-difficulty-model/output_train-exp003-70b_003-fold0-checkpoint-100"
+    )
     num_gpus: int = 4
 else:
-    llm_model_pth: str = "inarikami/DeepSeek-R1-Distill-Qwen-32B-AWQ"
+    llm_model_pth: str = "Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ"
+    difficulty_lora_path: str = "output_train/exp004/70b_003/fold0/checkpoint-100"  # ダウンロードしたloraのパス
     num_gpus: int = torch.cuda.device_count()
 
 os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, range(num_gpus)))
@@ -37,6 +42,8 @@ llm: LLM = LLM(
     trust_remote_code=True,  # Trust remote code (e.g., from HuggingFace) when downloading the model and tokenizer
     tensor_parallel_size=num_gpus,  # The number of GPUs to use for distributed execution with tensor parallelism
     gpu_memory_utilization=0.95,  # The ratio (between 0 and 1) of GPU memory to reserve for the model
+    enable_lora=True,
+    max_lora_rank=32,
     seed=2024,
 )
 

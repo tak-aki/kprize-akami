@@ -7,8 +7,8 @@ import json
 
 from vllm import RequestOutput, SamplingParams, LLM
 import torch
-from .utils import count_tokens, load_file_content
-from .config import BATCH_SIZE, MAX_NUM_SEQS
+from utils import count_tokens, load_file_content
+from config import BATCH_SIZE, MAX_NUM_SEQS
 
 import logging
 logger = logging.getLogger(__name__)

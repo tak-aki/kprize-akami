@@ -9,8 +9,8 @@ import unidiff
 import torch
 from vllm import RequestOutput, SamplingParams, LLM
 
-from .config import BATCH_SIZE, MAX_NUM_SEQS, VALIDATION_COPY_COUNT
-from .utils import count_tokens
+from config import BATCH_SIZE, MAX_NUM_SEQS, VALIDATION_COPY_COUNT
+from utils import count_tokens
 
 import logging
 logger = logging.getLogger(__name__)

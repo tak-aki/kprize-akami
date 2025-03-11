@@ -5,8 +5,8 @@ import torch
 
 from vllm import RequestOutput, SamplingParams, LLM
 
-from .config import BATCH_SIZE, MAX_NUM_SEQS
-from .utils import count_tokens, extract_patch_string, load_file_content
+from config import BATCH_SIZE, MAX_NUM_SEQS
+from utils import count_tokens, extract_patch_string, load_file_content
 
 import logging
 logger = logging.getLogger(__name__)

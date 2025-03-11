@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import argparse
 import time
 import gc
 from pathlib import Path
@@ -11,14 +12,14 @@ import pandas as pd
 
 start_time = time.time()
 
-from .config import BATCH_SIZE, VALIDATION_COPY_COUNT
-from .difficulty import get_easy_probs
-from .llm_selection import get_llm_selection
-from .bm25 import get_bm25_top_files
-from .llm_retrieve import get_llm_retrieval
-from .patching import get_patch_string
-from .utils import count_tokens, stringify_directory
-from .verifying import choose_patch_string, get_verification
+from config import BATCH_SIZE, VALIDATION_COPY_COUNT
+from difficulty import get_easy_probs
+from llm_selection import get_llm_selection
+from bm25 import get_bm25_top_files
+from llm_retrieve import get_llm_retrieval
+from patching import get_patch_string
+from utils import count_tokens, stringify_directory
+from verifying import choose_patch_string, get_verification
 
 import logging
 logger = logging.getLogger(__name__)
@@ -33,13 +34,14 @@ logger.propagate = False
 
 def predict_inner(
     problem_statement: str,
-    repo_archive: io.BytesIO,
-    pip_packages_archive: io.BytesIO,
-    env_setup_cmds_templates: list[str],
+    patch_filepath: str,
+    # repo_archive: io.BytesIO,
+    # pip_packages_archive: io.BytesIO,
+    # env_setup_cmds_templates: list[str],
     skip_prediction: bool = False,
-    save_result: bool = True,
+    # save_result: bool = True,
     difficulty_threshold: float = 0.5,
-    max_file_lines: int = 10,
+    # max_file_lines: int = 10,
     output_dir: str | None = None,
     directory: str = "repo",
 ) -> str:
@@ -56,9 +58,9 @@ def predict_inner(
     
     easy_probs = get_easy_probs([problem_statement])
     easy_prob = easy_probs[0]
-    # if easy_prob < difficulty_threshold:
-    #     logger.info(f"Skipping prediction because the problem is too difficult (easy_prob={easy_prob:.2f})")
-    #     return None
+    if easy_prob < difficulty_threshold:
+        logger.info(f"Skipping prediction because the problem is too difficult (easy_prob={easy_prob:.2f})")
+        return None
 
     directory_string = stringify_directory(directory)
 
@@ -111,7 +113,38 @@ def predict_inner(
     print("submitted patch_string")
     print(patch_string)
 
-    if patch_string is None:
-        return None
+    # if patch_string is None:
+    #     return None
 
-    return patch_string
+    # return patch_string
+
+    if patch_string is None:
+        patch_string = ""
+
+    with open(patch_filepath, "w") as f:
+        f.write(patch_string)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('problem_filepath')
+    parser.add_argument('patch_filepath')
+    parser.add_argument('--output_dir')
+    parser.add_argument('--directory', default='repo')
+
+    args = parser.parse_args()
+    problem_filepath = args.problem_filepath
+    patch_filepath = args.patch_filepath
+    output_dir = args.output_dir
+    directory = args.directory
+    
+    with open(problem_filepath, "r") as f:
+        problem_statement = f.read()
+
+    predict_inner(
+        problem_statement=problem_statement,
+        patch_filepath=patch_filepath,
+        output_dir=output_dir,
+        directory=directory
+    )

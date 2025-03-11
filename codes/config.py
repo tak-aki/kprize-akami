@@ -15,14 +15,18 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 if os.getenv("KAGGLE_KERNEL_RUN_TYPE") or os.getenv("KAGGLE_IS_COMPETITION_RERUN"):
-    llm_model_pth: str = "/kaggle/input/deepseek-r1/transformers/deepseek-r1-distill-llama-70b-awq/1"
+    # llm_model_pth: str = "/kaggle/input/deepseek-r1/transformers/deepseek-r1-distill-llama-70b-awq/1"
+    llm_model_pth: str = "/kaggle/input/deepseek-r1/seek-r1/transformers/deepseek-r1-distill-qwen-32b-awq/1"
     difficulty_lora_path: str = (
-        "/kaggle/input/kprize-akami-difficulty-model/output_train-exp003-70b_003-fold0-checkpoint-100"
+        # /kaggle/input/kprize-akami-difficulty-model/output_train-exp003-70b_003-fold0-checkpoint-100"
+        "/kaggle/input/kprize-akami-difficulty-model/output_train-exp004-003-fold0-checkpoint-100"
     )
     num_gpus: int = 4
 else:
-    llm_model_pth: str = "Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ"
-    difficulty_lora_path: str = "output_train/exp004/70b_003/fold0/checkpoint-100"  # ダウンロードしたloraのパス
+    # llm_model_pth: str = "Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ"
+    llm_model_pth: str = "inarikami/DeepSeek-R1-Distill-Qwen-32B-AWQ"
+    # difficulty_lora_path: str = "output_train/output_train-exp004-70b_003-fold0-checkpoint-100"  # ダウンロードしたloraのパス
+    difficulty_lora_path: str = "output_train/output_train-exp004-003-fold0-checkpoint-100"
     num_gpus: int = torch.cuda.device_count()
 
 os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, range(num_gpus)))

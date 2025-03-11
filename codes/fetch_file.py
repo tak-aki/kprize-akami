@@ -137,7 +137,7 @@ def fetch_file_contents(files_to_search: Dict[str, List[str]], context_lines: in
                 snippet_end: int = snippet[-1][0]
                 output.write(f"\nMatch #{snippet_idx}, lines {snippet_start} to {snippet_end}:\n")
                 for line_no, text in snippet:
-                    output.write(f"  {line_no:3d} | {text}\n")
+                    output.write(f"{line_no:3d} {text}\n")
                 output.write("\n")
         output.write("[file content end]\n\n")
 

@@ -84,6 +84,11 @@ def main():
         result_dir = output_dir / instance_id
         result_dir.mkdir(exist_ok=True)
 
+        truth_patch = instance["patch"]
+        truth_patch_path = result_dir / "truth_patch.diff"
+        with truth_patch_path.open("w") as f:
+            f.write(truth_patch)
+
         # Setup
         logger.info(f"Setting up the environment for {instance_id}.")
         clone_and_checkout(instance["repo"], instance["base_commit"], REPO_PATH)

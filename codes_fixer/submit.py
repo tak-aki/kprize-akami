@@ -54,11 +54,12 @@ def predict_inner(
     if skip_prediction:
         return None
     
-    easy_probs = get_easy_probs([problem_statement])
-    easy_prob = easy_probs[0]
+    # easy_probs = get_easy_probs([problem_statement])
+    # easy_prob = easy_probs[0]
     # if easy_prob < difficulty_threshold:
     #     logger.info(f"Skipping prediction because the problem is too difficult (easy_prob={easy_prob:.2f})")
     #     return None
+    easy_prob = 1.0
 
     directory_string = stringify_directory(directory)
 

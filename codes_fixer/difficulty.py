@@ -9,6 +9,11 @@ from vllm import SamplingParams, LLM
 from transformers import LogitsProcessor
 from vllm.lora.request import LoRARequest
 
+from vllm.distributed.parallel_state import destroy_model_parallel, destroy_distributed_environment
+import gc
+import ray
+import contextlib
+
 import logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -155,6 +160,7 @@ def get_easy_probs(problem_statements: list[str], return_model: bool=False) -> n
     easy_probs = pred_array[:, 0]
     logger.info(f"easy_probs={easy_probs}")
 
+
     if return_model:
         return [
             easy_probs, 
@@ -167,4 +173,14 @@ def get_easy_probs(problem_statements: list[str], return_model: bool=False) -> n
             }
         ]
     else:
+        # cleanup
+        del llm.llm_engine.model_executor
+        del llm
+        destroy_model_parallel()
+        destroy_distributed_environment()
+        with contextlib.suppress(AssertionError):
+            torch.distributed.destroy_process_group()
+        gc.collect()
+        torch.cuda.empty_cache()
+        ray.shutdown()
         return easy_probs

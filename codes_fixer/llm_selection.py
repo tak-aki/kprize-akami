@@ -6,6 +6,11 @@ import re
 import torch
 from vllm import RequestOutput, SamplingParams, LLM
 
+from vllm.distributed.parallel_state import destroy_model_parallel, destroy_distributed_environment
+import gc
+import ray
+import contextlib
+
 from .config import BATCH_SIZE, MAX_NUM_SEQS 
 from .utils import count_tokens 
 
@@ -146,4 +151,16 @@ def get_llm_selection(directory_string: str, problem_statement: str, model: Opti
     logger.info(f"response_texts token length: {[count_tokens(text, tokenizer) for text in response_texts]}")
     completion_texts = [pt + rt for pt, rt in zip(prompt_texts, response_texts)]
     extracted_files = [extract_file_path(rt) for rt in response_texts]
+
+    # cleanup
+    del llm.llm_engine.model_executor
+    del llm
+    destroy_model_parallel()
+    destroy_distributed_environment()
+    with contextlib.suppress(AssertionError):
+        torch.distributed.destroy_process_group()
+    gc.collect()
+    torch.cuda.empty_cache()
+    ray.shutdown()
+
     return completion_texts, extracted_files

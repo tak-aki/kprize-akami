@@ -10,6 +10,11 @@ import torch
 from .utils import count_tokens, load_file_content
 from .config import BATCH_SIZE, MAX_NUM_SEQS
 
+from vllm.distributed.parallel_state import destroy_model_parallel, destroy_distributed_environment
+import gc
+import ray
+import contextlib
+
 import logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -337,4 +342,15 @@ def get_llm_retrieval(problem_statement: str, codebase_path: str, candidate_file
 
     logger.info(f"num retrieved files: {[len(f) for f in retrieved_files]}")
 
+    # cleanup
+    del llm.llm_engine.model_executor
+    del llm
+    destroy_model_parallel()
+    destroy_distributed_environment()
+    with contextlib.suppress(AssertionError):
+        torch.distributed.destroy_process_group()
+    gc.collect()
+    torch.cuda.empty_cache()
+    ray.shutdown()
+    
     return completion_texts, retrieved_files

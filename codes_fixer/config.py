@@ -9,6 +9,7 @@ from vllm import LLM
 
 warnings.simplefilter("ignore")
 
+os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 
 ## Initialize LLM
 # os.environ["TOKENIZERS_PARALLELISM"] = "false"

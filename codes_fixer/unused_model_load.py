@@ -1,9 +1,12 @@
 import os
+from vllm import LLM
+from vllm.distributed.parallel_state import destroy_model_parallel, destroy_distributed_environment
+import torch
+import gc
+import ray
+import contextlib
 
 def load70b():
-    from vllm import LLM
-    import torch
-
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
     MAX_MODEL_LEN: int = 32_768
@@ -26,11 +29,21 @@ def load70b():
         enable_prefix_caching=True, 
         seed=2024,
     )
+
+    # cleanup
+    del llm.llm_engine.model_executor
+    del llm
+    destroy_model_parallel()
+    destroy_distributed_environment()
+    with contextlib.suppress(AssertionError):
+        torch.distributed.destroy_process_group()
+    gc.collect()
+    torch.cuda.empty_cache()
+    ray.shutdown()
+
     return None
 
 def load7b():
-    from vllm import LLM
-    import torch
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
     MAX_MODEL_LEN: int = 65_536
@@ -54,6 +67,18 @@ def load7b():
         enable_prefix_caching=True, 
         seed=2024,
     )
+
+    # cleanup
+    del llm.llm_engine.model_executor
+    del llm
+    destroy_model_parallel()
+    destroy_distributed_environment()
+    with contextlib.suppress(AssertionError):
+        torch.distributed.destroy_process_group()
+    gc.collect()
+    torch.cuda.empty_cache()
+    ray.shutdown()
+    
     return None
 
 

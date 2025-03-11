@@ -5,6 +5,11 @@ import torch
 
 from vllm import RequestOutput, SamplingParams, LLM
 
+from vllm.distributed.parallel_state import destroy_model_parallel, destroy_distributed_environment
+import gc
+import ray
+import contextlib
+
 from .config import BATCH_SIZE, MAX_NUM_SEQS
 from .utils import count_tokens, extract_patch_string, load_file_content
 
@@ -193,4 +198,14 @@ def get_patch_string(
             }
         ]
     else:
+        # cleanup
+        del llm.llm_engine.model_executor
+        del llm
+        destroy_model_parallel()
+        destroy_distributed_environment()
+        with contextlib.suppress(AssertionError):
+            torch.distributed.destroy_process_group()
+        gc.collect()
+        torch.cuda.empty_cache()
+        ray.shutdown()
         return completion_texts, patch_strings

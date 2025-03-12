@@ -8,7 +8,7 @@ import json
 from vllm import RequestOutput, SamplingParams, LLM
 import torch
 from utils import count_tokens, load_file_content
-from config import BATCH_SIZE, MAX_NUM_SEQS
+from config import retrieval_model_path, BATCH_SIZE, MAX_NUM_SEQS, num_gpus
 
 import logging
 logger = logging.getLogger(__name__)
@@ -229,25 +229,9 @@ def extract_retrieved_files(response_text: str) -> List[str]:
 def get_llm_retrieval(problem_statement: str, codebase_path: str, candidate_file_batch: List[dict]):
 
     ## Initialize LLM
-    os.environ["TOKENIZERS_PARALLELISM"] = "false"
-    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
-
-    if os.getenv("KAGGLE_KERNEL_RUN_TYPE") or os.getenv("KAGGLE_IS_COMPETITION_RERUN"):
-        llm_model_pth: str = "/kaggle/input/swe-fixer/transformers/swe-fixer-retriever-7b/1" #TODO: Change this to the correct model
-        num_gpus: int = 4
-    else:
-        llm_model_pth: str = "internlm/SWE-Fixer-Retriever-7B"
-        num_gpus: int = torch.cuda.device_count()
-
-    os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, range(num_gpus)))
-
-    MAX_TOKENS: int = 2048
-
     MAX_MODEL_LEN: int = 65_536
-
-
     llm: LLM = LLM(
-        model=llm_model_pth,
+        model=retrieval_model_path,
         max_num_seqs=MAX_NUM_SEQS,  # Maximum number of sequences per iteration. Default is 256
         max_model_len=MAX_MODEL_LEN,  # Model context length
         trust_remote_code=True,  # Trust remote code (e.g., from HuggingFace) when downloading the model and tokenizer
@@ -256,9 +240,9 @@ def get_llm_retrieval(problem_statement: str, codebase_path: str, candidate_file
         enable_prefix_caching=True, 
         seed=2024,
     )
-
     tokenizer = llm.get_tokenizer()
 
+    MAX_TOKENS: int = 2048
     sampling_params: SamplingParams = SamplingParams(
         temperature=0.6,  # randomness of the sampling
         min_p=0.01,

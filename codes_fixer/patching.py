@@ -5,7 +5,7 @@ import torch
 
 from vllm import RequestOutput, SamplingParams, LLM
 
-from config import BATCH_SIZE, MAX_NUM_SEQS
+from config import llm_model_path, BATCH_SIZE, MAX_NUM_SEQS, num_gpus
 from utils import count_tokens, extract_patch_string, load_file_content
 
 import logging
@@ -90,27 +90,12 @@ def get_patch_string(
     if model:
         llm = model["llm"]
         tokenizer = model["tokenizer"]
-        sampling_params = model["sampling_params"]
-        MAX_TOKENS = model["MAX_TOKENS"]
         MAX_MODEL_LEN = model["MAX_MODEL_LEN"]
     else:
         ## Initialize LLM
-        os.environ["TOKENIZERS_PARALLELISM"] = "false"
-        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
-
-        if os.getenv("KAGGLE_KERNEL_RUN_TYPE") or os.getenv("KAGGLE_IS_COMPETITION_RERUN"):
-            llm_model_pth: str = "/kaggle/input/m/mtfall/deepseek-r1/transformers/deepseek-r1-distill-llama-70b-awq/1"
-            num_gpus: int = 4
-        else:
-            llm_model_pth: str = "Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ"
-            num_gpus: int = torch.cuda.device_count()
-
-        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, range(num_gpus)))
-        MAX_TOKENS: int = 4096
         MAX_MODEL_LEN: int = 32_768
-
         llm: LLM = LLM(
-            model=llm_model_pth,
+            model=llm_model_path,
             max_num_seqs=MAX_NUM_SEQS,  # Maximum number of sequences per iteration. Default is 256
             max_model_len=MAX_MODEL_LEN,  # Model context length
             trust_remote_code=True,  # Trust remote code (e.g., from HuggingFace) when downloading the model and tokenizer
@@ -121,12 +106,13 @@ def get_patch_string(
         )
         tokenizer = llm.get_tokenizer()
 
-        sampling_params: SamplingParams = SamplingParams(
-            temperature=0.6,  # randomness of the sampling
-            min_p=0.01,
-            skip_special_tokens=True,  # Whether to skip special tokens in the output
-            max_tokens=MAX_TOKENS,
-        )
+    MAX_TOKENS: int = 4096
+    sampling_params: SamplingParams = SamplingParams(
+        temperature=0.6,  # randomness of the sampling
+        min_p=0.01,
+        skip_special_tokens=True,  # Whether to skip special tokens in the output
+        max_tokens=MAX_TOKENS,
+    )
 
     list_of_messages = [
         [
@@ -187,8 +173,6 @@ def get_patch_string(
             {
                 "llm": llm,
                 "tokenizer": tokenizer,
-                "sampling_params": sampling_params,
-                "MAX_TOKENS": MAX_TOKENS,
                 "MAX_MODEL_LEN": MAX_MODEL_LEN,
             }
         ]

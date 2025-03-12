@@ -33,7 +33,7 @@ logger.propagate = False
 
 def main():
     split = "test"  # train, test, dev
-    dataset_name = "princeton-nlp/SWE-bench"
+    dataset_name = "princeton-nlp/SWE-bench_Verified"
     num_instances = 100
     seed = 1029
     REPO_PATH = "repo"

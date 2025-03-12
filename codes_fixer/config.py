@@ -5,39 +5,39 @@ import warnings
 import torch
 from vllm import LLM
 
-# REPO_PATH: str = "repo"
-
 warnings.simplefilter("ignore")
 
+# model_param = "70b"
+model_param = "32b"
 
-## Initialize LLM
-# os.environ["TOKENIZERS_PARALLELISM"] = "false"
+if os.getenv("KAGGLE_KERNEL_RUN_TYPE") or os.getenv("KAGGLE_IS_COMPETITION_RERUN"):
+    num_gpus: int = 4
+    if model_param == "70b":
+        llm_model_path: str = "/kaggle/input/m/mtfall/deepseek-r1/transformers/deepseek-r1-distill-llama-70b-awq/1"
+        difficulty_lora_path: str = (
+                "/kaggle/input/kprize-akami-difficulty-model/output_train-exp004-70b_003-fold0-checkpoint-100"
+            )
+    elif model_param == "32b":
+        llm_model_path: str = "/kaggle/input/deepseek-r1/transformers/deepseek-r1-distill-qwen-32b-awq/1"
+        difficulty_lora_path: str = (
+                "/kaggle/input/kprize-akami-difficulty-model/output_train-exp004-003-fold0-checkpoint-100"
+            )
+    retrieval_model_path = "/kaggle/input/swe-fixer/transformers/swe-fixer-retriever-7b/1"
+else:
+    num_gpus: int = torch.cuda.device_count()
+    if model_param == "70b":
+        llm_model_path: str = "Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ"
+        difficulty_lora_path: str = "output_train/output_train-exp004-70b_003-fold0-checkpoint-100"
+    elif model_param == "32b":
+        llm_model_path: str = "inarikami/DeepSeek-R1-Distill-Qwen-32B-AWQ"
+        difficulty_lora_path: str = "output_train/output_train-exp004-003-fold0-checkpoint-100"
+    retrieval_model_path = "internlm/SWE-Fixer-Retriever-7B"
 
-# if os.getenv("KAGGLE_KERNEL_RUN_TYPE") or os.getenv("KAGGLE_IS_COMPETITION_RERUN"):
-#     llm_model_pth: str = "/kaggle/input/deepseek-r1/transformers/deepseek-r1-distill-qwen-32b-awq/1"
-#     num_gpus: int = 4
-# else:
-#     llm_model_pth: str = "inarikami/DeepSeek-R1-Distill-Qwen-32B-AWQ"
-#     num_gpus: int = torch.cuda.device_count()
 
-# os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, range(num_gpus)))
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, range(num_gpus)))
 
-BATCH_SIZE: int = 4
+MAX_NUM_SEQS: int = 6
+BATCH_SIZE: int = 6
 VALIDATION_COPY_COUNT: int = 1
-# MAX_TOKENS: int = 8192
-
-MAX_NUM_SEQS: int = 4
-# MAX_MODEL_LEN: int = 32_768
-
-
-# llm: LLM = LLM(
-#     model=llm_model_pth,
-#     max_num_seqs=MAX_NUM_SEQS,  # Maximum number of sequences per iteration. Default is 256
-#     max_model_len=MAX_MODEL_LEN,  # Model context length
-#     trust_remote_code=True,  # Trust remote code (e.g., from HuggingFace) when downloading the model and tokenizer
-#     tensor_parallel_size=num_gpus,  # The number of GPUs to use for distributed execution with tensor parallelism
-#     gpu_memory_utilization=0.95,  # The ratio (between 0 and 1) of GPU memory to reserve for the model
-#     seed=2024,
-# )
-
-# tokenizer = llm.get_tokenizer()

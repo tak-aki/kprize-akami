@@ -1,6 +1,7 @@
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+import py_compile
 
 import unidiff
 from vllm import RequestOutput, SamplingParams
@@ -49,6 +50,37 @@ def is_valid_patch_format(patch_string: str) -> bool:
         return False
     return True
 
+def find_patched_files(patch:str) -> List[str]:
+    patched_files = {
+        "added": [],  # 追加されたファイル
+        "removed": [],  # 削除されたファイル
+        "modified": [],  # 編集されたファイル
+    }
+    try: 
+        patch_set = unidiff.PatchSet(patch)
+
+        # ファイルごとに変更内容をチェック(addedは不要)
+        for patched_file in patch_set:
+            if patched_file.is_modified_file:
+                patched_files["modified"].append(patched_file.path)
+            if patched_file.is_removed_file:
+                patched_files["removed"].append(patched_file.path)
+            if patched_file.is_added_file:
+                patched_files["added"].append(patched_file.path)
+
+        return patched_files
+    except Exception as e:
+        print(f"Failed to find gold files: {e}")
+        return patched_files
+
+def check_syntax(file_path: str):
+    try:
+        py_compile.compile(file_path, doraise=True)
+        print(f"Syntax OK: {file_path}")
+        return True
+    except py_compile.PyCompileError as e:
+        print(f"Syntax Error in {file_path}: {e}")
+        return False
 
 def patch_dry_run_succeeds(patch_string: str, repo_path: str = REPO_PATH, timeout: int = 60) -> bool:
     """
@@ -65,11 +97,33 @@ def patch_dry_run_succeeds(patch_string: str, repo_path: str = REPO_PATH, timeou
     with patch_path.open("w") as f:
         f.write(patch_string)
 
-    cmd = f"patch --quiet --dry-run -p1 -i {str(patch_path)} -d {repo_path}"
+    dry_cmd = f"patch --quiet --dry-run -p1 -i {str(patch_path)} -d {repo_path}"
     try:
-        subprocess.run(cmd, shell=True, check=True, timeout=timeout)
-        return True
-    except Exception:
+        subprocess.run(dry_cmd, shell=True, check=True, timeout=timeout)
+        print("Dry run succeeded")
+
+        patched_files = find_patched_files(patch_string)
+        apply_cmd = f"patch --quiet -p1 -i {str(patch_path)} -d {repo_path}"
+        subprocess.run(apply_cmd, shell=True, check=True, timeout=timeout)
+        print("Patch Applied")
+
+        syntax_results = []
+        for patched_file in patched_files["modified"] + patched_files["added"]:
+            syntax_results.append(check_syntax(f"{repo_path}/{patched_file}"))
+
+        reverse_cmd = f"patch --quiet -R -p1 -i {str(patch_path)} -d {repo_path}"
+        subprocess.run(reverse_cmd, shell=True, check=True, timeout=timeout)
+        print("Patch Reversed")
+        
+        if all(syntax_results):
+            print("All Patched File Syntax OK")
+            return True
+        else:
+            print("Some Patched File Syntax Error")
+            return False
+
+    except Exception as e:
+        print(f"Error has occurred in checking the patch: {e}")
         return False
 
 

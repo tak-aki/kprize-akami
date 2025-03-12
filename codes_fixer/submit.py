@@ -74,7 +74,7 @@ def predict_inner(
 
     llm_retrieval_completion_texts, llm_retrieved_files = get_llm_retrieval(problem_statement, directory, concat_files)
 
-    patch_completion_texts, patch_strings = get_patch_string(problem_statement, directory, llm_retrieved_files, directory_string)
+    patch_completion_texts, patch_strings = get_patch_string(problem_statement, directory, llm_retrieved_files)
     verification_completion_texts_aggregated, judgments_aggregated = get_verification(
         problem_statement, bm25_top_files, patch_strings, directory
     )

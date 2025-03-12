@@ -116,6 +116,8 @@ def main():
                 "codes_fixer/submit.py", 
                 str(problem_filepath), 
                 str(patch_filepath), 
+                "--difficulty_threshold",
+                "0.5",
                 "--output_dir", 
                 str(result_dir)
             ], 

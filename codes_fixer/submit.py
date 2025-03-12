@@ -56,6 +56,7 @@ def predict_inner(
         print("Skipping prediction")
         return None
     print("Start running the inner predictor.")
+    print(f"difficulty_threshold: {difficulty_threshold}")
     
     easy_probs = get_easy_probs([problem_statement])
     easy_prob = easy_probs[0]
@@ -134,6 +135,7 @@ if __name__ == "__main__":
     parser.add_argument('problem_filepath')
     parser.add_argument('patch_filepath')
     parser.add_argument('--skip_prediction')
+    parser.add_argument('--difficulty_threshold', default=0.5)
     parser.add_argument('--output_dir')
     parser.add_argument('--directory', default='repo')
 
@@ -145,6 +147,7 @@ if __name__ == "__main__":
         skip_prediction = True
     else:
         skip_prediction = False
+    difficulty_threshold = float(args.difficulty_threshold)
     output_dir = args.output_dir
     directory = args.directory
     
@@ -155,6 +158,7 @@ if __name__ == "__main__":
         problem_statement=problem_statement,
         patch_filepath=patch_filepath,
         skip_prediction=skip_prediction,
+        difficulty_threshold=difficulty_threshold,
         output_dir=output_dir,
         directory=directory
     )

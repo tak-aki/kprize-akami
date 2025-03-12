@@ -4,11 +4,11 @@ import xml.etree.ElementTree as ET
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+import gc
+import contextlib
 
 import py_compile
 import unidiff
-import torch
-from vllm import RequestOutput, SamplingParams, LLM
 
 from config import llm_model_path, BATCH_SIZE, MAX_NUM_SEQS, num_gpus, VALIDATION_COPY_COUNT
 from utils import count_tokens
@@ -236,6 +236,15 @@ def get_verification(
     repo_path: str,
     model: Optional[dict] = None,
 ) -> Tuple[List[List[str]], List[List[bool]]]:
+    
+    import torch
+    from vllm import RequestOutput, SamplingParams, LLM
+    import ray
+    from vllm.distributed.parallel_state import (
+        destroy_model_parallel,
+        destroy_distributed_environment,
+    )
+
     if model:
         llm = model["llm"]
         tokenizer = model["tokenizer"]
@@ -310,4 +319,14 @@ def get_verification(
         judgments_aggregated[input_idx].append(judgement[1])
     print(f"num evaluation yes count: {judgments_aggregated}")
 
+    destroy_model_parallel()
+    destroy_distributed_environment()
+    del llm.llm_engine.model_executor
+    del llm
+    # with contextlib.suppress(AssertionError):
+    #     torch.distributed.destroy_process_group()
+    gc.collect()
+    torch.cuda.empty_cache()
+    ray.shutdown()
+    
     return completion_text_aggregated, judgments_aggregated

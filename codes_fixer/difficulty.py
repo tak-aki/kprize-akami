@@ -2,12 +2,10 @@ import math
 import os
 import textwrap
 from typing import List
+import gc
+import contextlib
 
 import numpy as np
-import torch
-from vllm import SamplingParams, LLM
-from transformers import LogitsProcessor
-from vllm.lora.request import LoRARequest
 
 from config import llm_model_path, difficulty_lora_path, MAX_NUM_SEQS, num_gpus
 
@@ -63,6 +61,15 @@ def make_inference_prompt(problem_statement, tokenizer):
 
 
 def get_easy_probs(problem_statements: list[str], return_model: bool=False) -> np.ndarray:
+    import torch
+    from vllm import SamplingParams, LLM
+    from transformers import LogitsProcessor
+    from vllm.lora.request import LoRARequest
+    import ray
+    from vllm.distributed.parallel_state import (
+        destroy_model_parallel,
+        destroy_distributed_environment,
+    )
 
     ## Initialize LLM
     MAX_MODEL_LEN: int = 32_768
@@ -148,4 +155,13 @@ def get_easy_probs(problem_statements: list[str], return_model: bool=False) -> n
             }
         ]
     else:
+        destroy_model_parallel()
+        destroy_distributed_environment()
+        del llm.llm_engine.model_executor
+        del llm
+        # with contextlib.suppress(AssertionError):
+        #     torch.distributed.destroy_process_group()
+        gc.collect()
+        torch.cuda.empty_cache()
+        ray.shutdown()
         return easy_probs

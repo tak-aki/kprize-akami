@@ -3,8 +3,8 @@ from typing import Dict, List, Tuple, Optional
 import os
 import re
 
-import torch
-from vllm import RequestOutput, SamplingParams, LLM
+import gc
+import contextlib
 
 from config import llm_model_path, BATCH_SIZE, MAX_NUM_SEQS, num_gpus
 from utils import count_tokens 
@@ -81,6 +81,13 @@ def extract_file_path(xml_content: str) -> Dict[str, List[str]]:
     return parsed_data
 
 def get_llm_selection(directory_string: str, problem_statement: str, model: Optional[dict]=None) -> Tuple[List[str], List[Dict[str, List[str]]]]:
+    import torch
+    from vllm import RequestOutput, SamplingParams, LLM
+    import ray
+    from vllm.distributed.parallel_state import (
+        destroy_model_parallel,
+        destroy_distributed_environment,
+    )
     if model:
         llm = model["llm"]
         tokenizer = model["tokenizer"]
@@ -131,4 +138,15 @@ def get_llm_selection(directory_string: str, problem_statement: str, model: Opti
     print(f"response_texts token length: {[count_tokens(text, tokenizer) for text in response_texts]}")
     completion_texts = [pt + rt for pt, rt in zip(prompt_texts, response_texts)]
     extracted_files = [extract_file_path(rt) for rt in response_texts]
+
+    destroy_model_parallel()
+    destroy_distributed_environment()
+    del llm.llm_engine.model_executor
+    del llm
+    # with contextlib.suppress(AssertionError):
+    #     torch.distributed.destroy_process_group()
+    gc.collect()
+    torch.cuda.empty_cache()
+    ray.shutdown()
+
     return completion_texts, extracted_files

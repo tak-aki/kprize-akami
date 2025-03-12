@@ -2,8 +2,8 @@
 import sys
 import json
 from typing import Dict, List, Optional, Tuple
-
-from vllm import RequestOutput, SamplingParams, LLM
+import gc
+import contextlib
 
 from config import llm_model_path, BATCH_SIZE, MAX_NUM_SEQS, num_gpus
 from utils import count_tokens, extract_and_make_patch_string, load_file_content
@@ -103,6 +103,14 @@ def get_patch_string(
         model: Optional[dict] = None,
         return_model: bool = False, 
         ) -> Tuple[List[str], List[Optional[str]]]:
+    from vllm import RequestOutput, SamplingParams, LLM
+    import torch
+    import ray
+    from vllm.distributed.parallel_state import (
+        destroy_model_parallel,
+        destroy_distributed_environment,
+    )
+
     if model:
         llm = model["llm"]
         tokenizer = model["tokenizer"]
@@ -184,5 +192,15 @@ def get_patch_string(
         input_idx = inference_idx_to_input_idx[inference_idx]
         completion_texts[input_idx] = completion_text
         patch_strings[input_idx] = patch_string
+
+    destroy_model_parallel()
+    destroy_distributed_environment()
+    del llm.llm_engine.model_executor
+    del llm
+    # with contextlib.suppress(AssertionError):
+    #     torch.distributed.destroy_process_group()
+    gc.collect()
+    torch.cuda.empty_cache()
+    ray.shutdown()
 
     return completion_texts, patch_strings

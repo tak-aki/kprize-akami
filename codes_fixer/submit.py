@@ -6,7 +6,6 @@ import time
 import gc
 from pathlib import Path
 from typing import List
-import torch
 
 import pandas as pd
 

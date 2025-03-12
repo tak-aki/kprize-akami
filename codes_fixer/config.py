@@ -3,7 +3,6 @@ import os
 import warnings
 
 import torch
-from vllm import LLM
 
 warnings.simplefilter("ignore")
 
@@ -37,6 +36,7 @@ else:
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, range(num_gpus)))
+os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 
 MAX_NUM_SEQS: int = 6
 BATCH_SIZE: int = 6

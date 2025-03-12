@@ -4,9 +4,9 @@ import ast
 import re
 import os
 import json
+import gc
+import contextlib
 
-from vllm import RequestOutput, SamplingParams, LLM
-import torch
 from utils import count_tokens, load_file_content
 from config import retrieval_model_path, BATCH_SIZE, MAX_NUM_SEQS, num_gpus
 
@@ -227,6 +227,13 @@ def extract_retrieved_files(response_text: str) -> List[str]:
     return files["files for editing"]
 
 def get_llm_retrieval(problem_statement: str, codebase_path: str, candidate_file_batch: List[dict]):
+    from vllm import RequestOutput, SamplingParams, LLM
+    import torch
+    import ray
+    from vllm.distributed.parallel_state import (
+        destroy_model_parallel,
+        destroy_distributed_environment,
+    )
 
     ## Initialize LLM
     MAX_MODEL_LEN: int = 65_536
@@ -321,4 +328,15 @@ def get_llm_retrieval(problem_statement: str, codebase_path: str, candidate_file
 
     print(f"num retrieved files: {[len(f) for f in retrieved_files]}")
 
+
+    destroy_model_parallel()
+    destroy_distributed_environment()
+    del llm.llm_engine.model_executor
+    del llm
+    # with contextlib.suppress(AssertionError):
+    #     torch.distributed.destroy_process_group()
+    gc.collect()
+    torch.cuda.empty_cache()
+    ray.shutdown()
+    
     return completion_texts, retrieved_files

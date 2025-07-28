@@ -3,11 +3,11 @@ from typing import Dict, List, Tuple, Optional
 import os
 import re
 
-import torch
-from vllm import RequestOutput, SamplingParams, LLM
+import gc
+import contextlib
 
-from .config import BATCH_SIZE, MAX_NUM_SEQS 
-from .utils import count_tokens 
+from config import llm_model_path, BATCH_SIZE, MAX_NUM_SEQS, num_gpus
+from utils import count_tokens 
 
 import logging
 logger = logging.getLogger(__name__)
@@ -75,35 +75,28 @@ def extract_file_path(xml_content: str) -> Dict[str, List[str]]:
                 if filepath_text:
                     parsed_data.append(filepath_text)
         except Exception as e:
-            logger.info(f"Error parsing output {e}")
-            logger.info(xml_content)
+            print(f"Error parsing output {e}")
+            print(xml_content)
             return [] 
     return parsed_data
 
 def get_llm_selection(directory_string: str, problem_statement: str, model: Optional[dict]=None) -> Tuple[List[str], List[Dict[str, List[str]]]]:
+    import torch
+    from vllm import RequestOutput, SamplingParams, LLM
+    import ray
+    from vllm.distributed.parallel_state import (
+        destroy_model_parallel,
+        destroy_distributed_environment,
+    )
     if model:
         llm = model["llm"]
         tokenizer = model["tokenizer"]
         MAX_MODEL_LEN = model["MAX_MODEL_LEN"]
     else:
         ## Initialize LLM
-        os.environ["TOKENIZERS_PARALLELISM"] = "false"
-        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
-
-        if os.getenv("KAGGLE_KERNEL_RUN_TYPE") or os.getenv("KAGGLE_IS_COMPETITION_RERUN"):
-            llm_model_pth: str = "/kaggle/input/m/mtfall/deepseek-r1/transformers/deepseek-r1-distill-llama-70b-awq/1"
-            num_gpus: int = 4
-        else:
-            llm_model_pth: str = "Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ"
-            num_gpus: int = torch.cuda.device_count()
-
-        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, range(num_gpus)))
-
         MAX_MODEL_LEN: int = 32_768
-
-
         llm: LLM = LLM(
-            model=llm_model_pth,
+            model=llm_model_path,
             max_num_seqs=MAX_NUM_SEQS,  # Maximum number of sequences per iteration. Default is 256
             max_model_len=MAX_MODEL_LEN,  # Model context length
             trust_remote_code=True,  # Trust remote code (e.g., from HuggingFace) when downloading the model and tokenizer
@@ -112,7 +105,6 @@ def get_llm_selection(directory_string: str, problem_statement: str, model: Opti
             enable_prefix_caching=True, 
             seed=2024,
         )
-
         tokenizer = llm.get_tokenizer()
 
     MAX_TOKENS: int = 4096
@@ -138,12 +130,23 @@ def get_llm_selection(directory_string: str, problem_statement: str, model: Opti
         tokenizer.apply_chat_template(conversation=messages, tokenize=False, add_generation_prompt=True) + "<think>\n"
         for messages in list_of_messages
     ]
-    logger.info(f"prompt_texts token length: {[count_tokens(text, tokenizer) for text in prompt_texts]}")
+    print(f"prompt_texts token length: {[count_tokens(text, tokenizer) for text in prompt_texts]}")
     request_outputs: List[RequestOutput] = llm.generate(prompt_texts, sampling_params=sampling_params)
     if not request_outputs:
         return [], []
     response_texts = [output.outputs[0].text for output in request_outputs]
-    logger.info(f"response_texts token length: {[count_tokens(text, tokenizer) for text in response_texts]}")
+    print(f"response_texts token length: {[count_tokens(text, tokenizer) for text in response_texts]}")
     completion_texts = [pt + rt for pt, rt in zip(prompt_texts, response_texts)]
     extracted_files = [extract_file_path(rt) for rt in response_texts]
+
+    destroy_model_parallel()
+    destroy_distributed_environment()
+    del llm.llm_engine.model_executor
+    del llm
+    # with contextlib.suppress(AssertionError):
+    #     torch.distributed.destroy_process_group()
+    gc.collect()
+    torch.cuda.empty_cache()
+    ray.shutdown()
+
     return completion_texts, extracted_files

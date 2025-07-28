@@ -4,11 +4,11 @@ import ast
 import re
 import os
 import json
+import gc
+import contextlib
 
-from vllm import RequestOutput, SamplingParams, LLM
-import torch
-from .utils import count_tokens, load_file_content
-from .config import BATCH_SIZE, MAX_NUM_SEQS
+from utils import count_tokens, load_file_content
+from config import retrieval_model_path, BATCH_SIZE, MAX_NUM_SEQS, num_gpus
 
 import logging
 logger = logging.getLogger(__name__)
@@ -210,7 +210,7 @@ def parse_python_file(source, file_path):
         }
         return result
     except Exception as e:
-        logger.info(f"Error parsing file {file_path}: {e}")
+        print(f"Error parsing file {file_path}: {e}")
         return None
 
 def extract_retrieved_files(response_text: str) -> List[str]:
@@ -220,34 +220,25 @@ def extract_retrieved_files(response_text: str) -> List[str]:
     try:
         files = json.loads(response_text)
     except json.JSONDecodeError:
-        logger.info("Error parsing JSON response.")
+        print("Error parsing JSON response.")
         files = {
             "files for editing": []
         }
     return files["files for editing"]
 
 def get_llm_retrieval(problem_statement: str, codebase_path: str, candidate_file_batch: List[dict]):
+    from vllm import RequestOutput, SamplingParams, LLM
+    import torch
+    import ray
+    from vllm.distributed.parallel_state import (
+        destroy_model_parallel,
+        destroy_distributed_environment,
+    )
 
     ## Initialize LLM
-    os.environ["TOKENIZERS_PARALLELISM"] = "false"
-    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
-
-    if os.getenv("KAGGLE_KERNEL_RUN_TYPE") or os.getenv("KAGGLE_IS_COMPETITION_RERUN"):
-        llm_model_pth: str = "/kaggle/input/swe-fixer/transformers/swe-fixer-retriever-7b/1" #TODO: Change this to the correct model
-        num_gpus: int = 4
-    else:
-        llm_model_pth: str = "internlm/SWE-Fixer-Retriever-7B"
-        num_gpus: int = torch.cuda.device_count()
-
-    os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, range(num_gpus)))
-
-    MAX_TOKENS: int = 2048
-
     MAX_MODEL_LEN: int = 65_536
-
-
     llm: LLM = LLM(
-        model=llm_model_pth,
+        model=retrieval_model_path,
         max_num_seqs=MAX_NUM_SEQS,  # Maximum number of sequences per iteration. Default is 256
         max_model_len=MAX_MODEL_LEN,  # Model context length
         trust_remote_code=True,  # Trust remote code (e.g., from HuggingFace) when downloading the model and tokenizer
@@ -256,9 +247,9 @@ def get_llm_retrieval(problem_statement: str, codebase_path: str, candidate_file
         enable_prefix_caching=True, 
         seed=2024,
     )
-
     tokenizer = llm.get_tokenizer()
 
+    MAX_TOKENS: int = 2048
     sampling_params: SamplingParams = SamplingParams(
         temperature=0.6,  # randomness of the sampling
         min_p=0.01,
@@ -273,10 +264,10 @@ def get_llm_retrieval(problem_statement: str, codebase_path: str, candidate_file
         file_documentations = [parse_python_file(load_file_content(codebase_path, file_path), file_path) for file_path in candidate_file]
         #file_documentationsからNoneを除外
         file_documentations = [f for f in file_documentations if f is not None]
-        logger.info(f"num valid files: {len(file_documentations)}")
+        print(f"num valid files: {len(file_documentations)}")
 
         if len(file_documentations) == 0:
-            logger.info("All files are invalid")
+            print("All files are invalid")
             list_of_retrieve_prompt.append("")
             continue
         prompt_json = {
@@ -296,7 +287,7 @@ def get_llm_retrieval(problem_statement: str, codebase_path: str, candidate_file
             }
         }
         while count_tokens(json.dumps(prompt_json), tokenizer) > (MAX_MODEL_LEN - 100): # 100 is a buffer
-            logger.info(
+            print(
                 f"Exceeding token limit ({count_tokens(json.dumps(prompt_json), tokenizer)} > {MAX_MODEL_LEN}), remove last file and remaining files: {len(prompt_json['input']['retrieved file documentations'])-1}"
             )
             del prompt_json["input"]["retrieved file documentations"][-1]
@@ -316,10 +307,10 @@ def get_llm_retrieval(problem_statement: str, codebase_path: str, candidate_file
         for messages in list_of_messages
     ]
 
-    logger.info(f"prompt_texts token length {[count_tokens(text, tokenizer) for text in prompt_texts]}")
+    print(f"prompt_texts token length {[count_tokens(text, tokenizer) for text in prompt_texts]}")
     request_outputs: list[RequestOutput] = llm.generate(prompt_texts, sampling_params=sampling_params)
     response_texts_from_inference: List[str] = [request_output.outputs[0].text for request_output in request_outputs]
-    logger.info(f"response_texts_from_inference token length : {[count_tokens(text, tokenizer) for text in response_texts_from_inference]}")
+    print(f"response_texts_from_inference token length : {[count_tokens(text, tokenizer) for text in response_texts_from_inference]}")
     completion_texts_from_inference = [
         prompt_text + response_text for prompt_text, response_text in zip(prompt_texts, response_texts_from_inference)
     ]
@@ -335,6 +326,17 @@ def get_llm_retrieval(problem_statement: str, codebase_path: str, candidate_file
         completion_texts[input_idx] = completion_text
         retrieved_files[input_idx] = retrieved_file
 
-    logger.info(f"num retrieved files: {[len(f) for f in retrieved_files]}")
+    print(f"num retrieved files: {[len(f) for f in retrieved_files]}")
 
+
+    destroy_model_parallel()
+    destroy_distributed_environment()
+    del llm.llm_engine.model_executor
+    del llm
+    # with contextlib.suppress(AssertionError):
+    #     torch.distributed.destroy_process_group()
+    gc.collect()
+    torch.cuda.empty_cache()
+    ray.shutdown()
+    
     return completion_texts, retrieved_files

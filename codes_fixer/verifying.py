@@ -4,13 +4,14 @@ import xml.etree.ElementTree as ET
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+import gc
+import contextlib
 
+import py_compile
 import unidiff
-import torch
-from vllm import RequestOutput, SamplingParams, LLM
 
-from .config import BATCH_SIZE, MAX_NUM_SEQS, VALIDATION_COPY_COUNT
-from .utils import count_tokens
+from config import llm_model_path, BATCH_SIZE, MAX_NUM_SEQS, num_gpus, VALIDATION_COPY_COUNT
+from utils import count_tokens
 
 import logging
 logger = logging.getLogger(__name__)
@@ -78,6 +79,37 @@ def is_valid_patch_format(patch_string: str) -> bool:
         return False
     return True
 
+def find_patched_files(patch:str) -> List[str]:
+    patched_files = {
+        "added": [],  # 追加されたファイル
+        "removed": [],  # 削除されたファイル
+        "modified": [],  # 編集されたファイル
+    }
+    try: 
+        patch_set = unidiff.PatchSet(patch)
+
+        # ファイルごとに変更内容をチェック(addedは不要)
+        for patched_file in patch_set:
+            if patched_file.is_modified_file:
+                patched_files["modified"].append(patched_file.path)
+            if patched_file.is_removed_file:
+                patched_files["removed"].append(patched_file.path)
+            if patched_file.is_added_file:
+                patched_files["added"].append(patched_file.path)
+
+        return patched_files
+    except Exception as e:
+        print(f"Failed to find gold files: {e}")
+        return patched_files
+
+def check_syntax(file_path: str):
+    try:
+        py_compile.compile(file_path, doraise=True)
+        print(f"Syntax OK: {file_path}")
+        return True
+    except py_compile.PyCompileError as e:
+        print(f"Syntax Error in {file_path}: {e}")
+        return False
 
 def patch_dry_run_succeeds(patch_string: str, repo_path: str, timeout: int = 60) -> bool:
     """
@@ -94,12 +126,35 @@ def patch_dry_run_succeeds(patch_string: str, repo_path: str, timeout: int = 60)
     with patch_path.open("w") as f:
         f.write(patch_string)
 
-    cmd = f"patch --quiet --dry-run -p1 -i {str(patch_path)} -d {repo_path}"
+    dry_cmd = f"patch --quiet --dry-run -p1 -i {str(patch_path)} -d {repo_path}"
     try:
-        subprocess.run(cmd, shell=True, check=True, timeout=timeout)
-        return True
-    except Exception:
+        subprocess.run(dry_cmd, shell=True, check=True, timeout=timeout)
+        print("Dry run succeeded")
+
+        patched_files = find_patched_files(patch_string)
+        apply_cmd = f"patch --quiet -p1 -i {str(patch_path)} -d {repo_path}"
+        subprocess.run(apply_cmd, shell=True, check=True, timeout=timeout)
+        print("Patch Applied")
+
+        syntax_results = []
+        for patched_file in patched_files["modified"] + patched_files["added"]:
+            syntax_results.append(check_syntax(f"{repo_path}/{patched_file}"))
+
+        reverse_cmd = f"patch --quiet -R -p1 -i {str(patch_path)} -d {repo_path}"
+        subprocess.run(reverse_cmd, shell=True, check=True, timeout=timeout)
+        print("Patch Reversed")
+        
+        if all(syntax_results):
+            print("All Patched File Syntax OK")
+            return True
+        else:
+            print("Some Patched File Syntax Error")
+            return False
+
+    except Exception as e:
+        print(f"Error has occurred in checking the patch: {e}")
         return False
+
 
 def extract_evaluation_results(text):
     """
@@ -180,32 +235,24 @@ def get_verification(
     patch_strings: List[Optional[str]],
     repo_path: str,
     model: Optional[dict] = None,
-    return_model: bool = False,
 ) -> Tuple[List[List[str]], List[List[bool]]]:
+    
+    import torch
+    from vllm import RequestOutput, SamplingParams, LLM
+    import ray
+    from vllm.distributed.parallel_state import (
+        destroy_model_parallel,
+        destroy_distributed_environment,
+    )
+
     if model:
         llm = model["llm"]
         tokenizer = model["tokenizer"]
-        sampling_params = model["sampling_params"]
-        MAX_TOKENS = model["MAX_TOKENS"]
         MAX_MODEL_LEN = model["MAX_MODEL_LEN"]
     else:
-        ## Initialize LLM
-        os.environ["TOKENIZERS_PARALLELISM"] = "false"
-        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
-
-        if os.getenv("KAGGLE_KERNEL_RUN_TYPE") or os.getenv("KAGGLE_IS_COMPETITION_RERUN"):
-            llm_model_pth: str = "/kaggle/input/m/mtfall/deepseek-r1/transformers/deepseek-r1-distill-llama-70b-awq/1"
-            num_gpus: int = 4
-        else:
-            llm_model_pth: str = "Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ"
-            num_gpus: int = torch.cuda.device_count()
-
-        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, range(num_gpus)))
-        MAX_TOKENS: int = 4096
         MAX_MODEL_LEN: int = 32_768
-
         llm: LLM = LLM(
-            model=llm_model_pth,
+            model=llm_model_path,
             max_num_seqs=MAX_NUM_SEQS,  # Maximum number of sequences per iteration. Default is 256
             max_model_len=MAX_MODEL_LEN,  # Model context length
             trust_remote_code=True,  # Trust remote code (e.g., from HuggingFace) when downloading the model and tokenizer
@@ -215,12 +262,14 @@ def get_verification(
             seed=2024,
         )
         tokenizer = llm.get_tokenizer()
-        sampling_params: SamplingParams = SamplingParams(
-            temperature=0.6,  # randomness of the sampling
-            min_p=0.01,
-            skip_special_tokens=True,  # Whether to skip special tokens in the output
-            max_tokens=MAX_TOKENS,
-        )
+
+    MAX_TOKENS: int = 4096
+    sampling_params: SamplingParams = SamplingParams(
+        temperature=0.6,  # randomness of the sampling
+        min_p=0.01,
+        skip_special_tokens=True,  # Whether to skip special tokens in the output
+        max_tokens=MAX_TOKENS,
+    )
 
     inference_idx_to_input_idx: list[int] = [
         input_idx
@@ -229,7 +278,7 @@ def get_verification(
         if patch_string is not None
         and is_valid_patch_format(patch_string) and patch_dry_run_succeeds(patch_string, repo_path)
     ]
-    logger.info(f"inference_idx_to_input_idx: {inference_idx_to_input_idx}")
+    print(f"inference_idx_to_input_idx: {inference_idx_to_input_idx}")
 
     list_of_messages: List[List[Dict[str, str]]] = [
         [
@@ -251,16 +300,16 @@ def get_verification(
         + "<think>\n"
         for messages in list_of_messages
     ]
-    # logger.info(prompt_texts)
+    # print(prompt_texts)
 
-    logger.info(f"prompt_texts token length: {[count_tokens(text, tokenizer) for text in prompt_texts]}")
+    print(f"prompt_texts token length: {[count_tokens(text, tokenizer) for text in prompt_texts]}")
     request_outputs: list[RequestOutput] = llm.generate(prompt_texts, sampling_params=sampling_params)
     response_texts: List[str] = [request_output.outputs[0].text for request_output in request_outputs]
-    logger.info(f"response_texts_from_inference token length : {[count_tokens(text, tokenizer) for text in response_texts]}")
+    print(f"response_texts_from_inference token length : {[count_tokens(text, tokenizer) for text in response_texts]}")
 
     completion_texts = [prompt_text + response_text for prompt_text, response_text in zip(prompt_texts, response_texts)]
     judgments_flattened: List[dict] = [extract_evaluation_results(response_text) for response_text in response_texts]
-    logger.info(f"judgments_flattened: {judgments_flattened}")
+    print(f"judgments_flattened: {judgments_flattened}")
 
     judgments_aggregated: List[List[int]] = [[] for _ in range(BATCH_SIZE)]
     completion_text_aggregated: List[List[str]] = [[] for _ in patch_strings]
@@ -268,6 +317,16 @@ def get_verification(
         input_idx = inference_idx_to_input_idx[inference_idx]
         completion_text_aggregated[input_idx].append(completion_text)
         judgments_aggregated[input_idx].append(judgement[1])
-    logger.info(f"num evaluation yes count: {judgments_aggregated}")
+    print(f"num evaluation yes count: {judgments_aggregated}")
 
+    destroy_model_parallel()
+    destroy_distributed_environment()
+    del llm.llm_engine.model_executor
+    del llm
+    # with contextlib.suppress(AssertionError):
+    #     torch.distributed.destroy_process_group()
+    gc.collect()
+    torch.cuda.empty_cache()
+    ray.shutdown()
+    
     return completion_text_aggregated, judgments_aggregated

@@ -2,12 +2,12 @@ import math
 import os
 import textwrap
 from typing import List
+import gc
+import contextlib
 
 import numpy as np
-import torch
-from vllm import SamplingParams, LLM
-from transformers import LogitsProcessor
-from vllm.lora.request import LoRARequest
+
+from config import llm_model_path, difficulty_lora_path, MAX_NUM_SEQS, num_gpus
 
 import logging
 logger = logging.getLogger(__name__)
@@ -61,29 +61,20 @@ def make_inference_prompt(problem_statement, tokenizer):
 
 
 def get_easy_probs(problem_statements: list[str], return_model: bool=False) -> np.ndarray:
+    import torch
+    from vllm import SamplingParams, LLM
+    from transformers import LogitsProcessor
+    from vllm.lora.request import LoRARequest
+    import ray
+    from vllm.distributed.parallel_state import (
+        destroy_model_parallel,
+        destroy_distributed_environment,
+    )
 
     ## Initialize LLM
-    os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
-    if os.getenv("KAGGLE_KERNEL_RUN_TYPE") or os.getenv("KAGGLE_IS_COMPETITION_RERUN"):
-        llm_model_pth: str = "/kaggle/input/m/mtfall/deepseek-r1/transformers/deepseek-r1-distill-llama-70b-awq/1"
-        difficulty_lora_path: str = (
-            "/kaggle/input/kprize-akami-difficulty-model/output_train-exp003-70b_003-fold0-checkpoint-100"
-        )
-        num_gpus: int = 4
-    else:
-        llm_model_pth: str = "Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ"
-        difficulty_lora_path: str = "/home/takuya.akiyama/work/kprize-akami/output_train/output_train-exp004-70b_003-fold0-checkpoint-100"
-        num_gpus: int = torch.cuda.device_count()
-
-    os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, range(num_gpus)))
-    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
-
-    MAX_NUM_SEQS: int = 6
     MAX_MODEL_LEN: int = 32_768
-
     llm: LLM = LLM(
-        model=llm_model_pth,
+        model=llm_model_path,
         max_num_seqs=MAX_NUM_SEQS,  # Maximum number of sequences per iteration. Default is 256
         max_model_len=MAX_MODEL_LEN,  # Model context length
         trust_remote_code=True,  # Trust remote code (e.g., from HuggingFace) when downloading the model and tokenizer
@@ -94,7 +85,6 @@ def get_easy_probs(problem_statements: list[str], return_model: bool=False) -> n
         max_lora_rank=32,
         seed=2024,
     )
-
     tokenizer = llm.get_tokenizer()
 
     prompt_text_list = [make_inference_prompt(problem_statement, tokenizer) for problem_statement in problem_statements]
@@ -153,7 +143,7 @@ def get_easy_probs(problem_statements: list[str], return_model: bool=False) -> n
     pred_array = np.array(results).reshape((-1, 3))
 
     easy_probs = pred_array[:, 0]
-    logger.info(f"easy_probs={easy_probs}")
+    print(f"easy_probs={easy_probs}")
 
     if return_model:
         return [
@@ -161,10 +151,17 @@ def get_easy_probs(problem_statements: list[str], return_model: bool=False) -> n
             {
                 "llm": llm,
                 "tokenizer": tokenizer,
-                "sampling_params": None,
-                "MAX_TOKENS": None,
                 "MAX_MODEL_LEN": MAX_MODEL_LEN,
             }
         ]
     else:
+        destroy_model_parallel()
+        destroy_distributed_environment()
+        del llm.llm_engine.model_executor
+        del llm
+        # with contextlib.suppress(AssertionError):
+        #     torch.distributed.destroy_process_group()
+        gc.collect()
+        torch.cuda.empty_cache()
+        ray.shutdown()
         return easy_probs

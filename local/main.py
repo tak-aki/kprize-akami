@@ -2,14 +2,17 @@ import json
 import logging
 import shutil
 import time
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import cast
+import subprocess
+import sys
 
 import docker
 import numpy as np
 
-from codes_fixer.submit import predict_inner
+# from codes_fixer.submit import predict_inner
 from local.src.setup import clone_and_checkout, setup_data
 from local.src.utils import save_json, set_seed
 from swebench.harness.constants import SWEbenchInstance
@@ -30,7 +33,7 @@ logger.propagate = False
 
 def main():
     split = "test"  # train, test, dev
-    dataset_name = "princeton-nlp/SWE-bench"
+    dataset_name = "princeton-nlp/SWE-bench_Verified"
     num_instances = 100
     seed = 1029
     REPO_PATH = "repo"
@@ -90,14 +93,54 @@ def main():
 
         # Predict the patch
         logger.info(f"Predicting the patch for {instance_id}.")
-        patch = predict_inner(
-            instance["problem_statement"],
-            repo_archive=None,
-            pip_packages_archive=None,
-            env_setup_cmds_templates=None,
-            skip_prediction=False,
-            output_dir=result_dir,
+        # patch = predict_inner(
+        #     instance["problem_statement"],
+        #     repo_archive=None,
+        #     pip_packages_archive=None,
+        #     env_setup_cmds_templates=None,
+        #     skip_prediction=False,
+        #     output_dir=result_dir,
+        # )
+
+        problem_filepath = output_dir / "problem_statement.txt"
+        patch_filepath = output_dir / "patch.diff"
+        with open(problem_filepath, "w") as f:
+            f.write(instance["problem_statement"])
+        if os.path.exists(patch_filepath):
+            os.remove(patch_filepath)
+            
+        python_executable = sys.executable
+        process = subprocess.Popen(
+            [
+                python_executable, 
+                "codes_fixer/submit.py", 
+                str(problem_filepath), 
+                str(patch_filepath), 
+                "--difficulty_threshold",
+                "0.5",
+                "--output_dir", 
+                str(result_dir)
+            ], 
+            stdout=sys.stdout,
+            stderr=sys.stderr, 
         )
+        logger.info(f"predict process start: {process.pid}")
+        try:
+            process.wait(timeout=60*28) # 30分 - バッファ
+
+            if os.path.exists(patch_filepath):
+                with open(patch_filepath, "r") as f:
+                    patch = f.read()
+            else:
+                patch = ""
+                logger.info("patch file does'nt exist.")
+        except subprocess.TimeoutExpired:
+            logger.info("predict process timeout")
+            process.kill()
+            patch = ""
+        
+        if patch == "":
+            patch = None
 
         result = {
             "instance_id": instance_id,

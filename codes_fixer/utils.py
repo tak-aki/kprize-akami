@@ -6,6 +6,8 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 import unidiff
+import difflib
+import json
 
 import logging
 logger = logging.getLogger(__name__)
@@ -21,11 +23,16 @@ logger.propagate = False
 
 def stringify_directory(directory: str) -> str:
     rel_paths: List[str] = []
+    banned_strings = [".venv", ".pyc", ".txt", ".pytest_cache", ".github", "/doc/", "/tests/"]
     for root, dirs, files in os.walk(directory):
         for file in files:
-            file_path = os.path.join(root, file)
-            rel_path = os.path.relpath(file_path, start=directory)
-            rel_paths.append(rel_path)
+            for banned_string in banned_strings:
+                if banned_string in root or banned_string in file:
+                    break
+            else:
+                file_path = os.path.join(root, file)
+                rel_path = os.path.relpath(file_path, start=directory)
+                rel_paths.append(rel_path)
     return "\n".join(rel_paths)
 
 
@@ -45,12 +52,55 @@ def walk_directory(directory: str, depth: int = 2) -> List[str]:
     return relative_paths
 
 
-def extract_patch_string(text: str) -> Optional[str]:
-    pattern = r"\n```diff\n(.*?)\n```"
-    matches = re.findall(pattern, text, re.DOTALL)
-    if not matches:
+def remove_line_numbers(content):
+    # Remove line numbers from the file content
+    return re.sub(r"^\d+\s", "", content, flags=re.MULTILINE)
+
+def generate_git_diff(json_str):
+
+    try:
+        json_data = json.loads(json_str)
+        edited_code = json_data["edited code"]
+    except Exception as e:
+        print(f"Error in parsing json output for task code editing: {e}")
+        return ""
+    
+    patch = ""
+    for edit in edited_code:
+        try:
+            file_path = edit["file"]
+            old_snippet = remove_line_numbers(edit["code snippet to be modified"].rstrip()).split("\n")
+            new_snippet = edit["edited code snippet"].rstrip().split("\n")
+            
+            diff = difflib.unified_diff(
+                old_snippet, new_snippet,
+                fromfile=f"a/{file_path}",
+                tofile=f"b/{file_path}",
+                lineterm=""
+            )
+        
+            patch += "\n".join(diff) + "\n"
+        except Exception as e:
+            print(f"Error in generating git diff for task code editing: {e}")
+    
+    return patch
+
+def extract_and_make_patch_string(text: str) -> Optional[str]:
+    import xml.etree.ElementTree as ET
+
+    pattern: str = r"<modification>(.*?)</modification>"
+    matches: List[str] = re.findall(pattern, text, re.DOTALL)
+
+    if len(matches) == 0:
+        print("No <modification> field found")
         return None
-    return matches[-1] + "\n"
+    
+    patch = generate_git_diff(matches[0])
+    
+    if patch == "":
+        return None
+    else:
+        return patch
 
 
 def is_valid_patch_format(patch_string: str) -> bool:
@@ -74,13 +124,13 @@ def load_file_content(codebase_path: str, file_path_rel: str, with_line_numbers:
     """
     file_path = os.path.join(codebase_path, file_path_rel)
     if not os.path.exists(file_path):
-        logger.info(f"File not found: {file_path}")
+        print(f"File not found: {file_path}")
         return ""
     if not os.path.isfile(file_path):
-        logger.info(f"Not a file: {file_path}")
+        print(f"Not a file: {file_path}")
         return ""
     with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
         content =  f.read()
     if with_line_numbers:
-        content = "\n".join([f"{i + 1}: {line}" for i, line in enumerate(content.split("\n"))])
+        content = "\n".join([f"{i + 1:4d} {line}" for i, line in enumerate(content.split("\n"))])
     return content

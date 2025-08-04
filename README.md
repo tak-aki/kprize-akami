@@ -1,30 +1,73 @@
 # kprize-akami
 
-## 構成
-[smlyさんの作業フロー](https://ho.lc/blog/kaggle_code_submission/)を参考に、コード・ライブラリ・submit notebookを管理するための構成
-1回smlyさんの記事を読んで理解する必要あり
+This is the solution code for the Kaggle competition [Konwinski Prize](https://www.kaggle.com/competitions/konwinski-prize).
 
-.  
-├── codes # 実際に動かすコードを配置。kaggle上ではデータセットとして扱われる。  
-├── deps # サブミットに必要なライブラリをファイルとして作成する。kernelとしてkaggleにアップ・実行することでsubmit notebookからインポート可能になる。  
-└── sub # submission用のnotebookをおく。
+## Structure
 
-## 環境構築
+The structure is designed to manage code, libraries, and submit notebooks, referencing [smly's workflow](https://ho.lc/blog/kaggle_code_submission/).
+
 ```
+.
+├── codes  # Contains the actual code to be executed. Treated as a dataset on Kaggle
+├── deps   # Creates necessary libraries for submission as files. Can be imported from submit notebook by uploading and running as a kernel on Kaggle
+└── sub    # Contains submission notebooks
+```
+
+## Environment Setup
+
+### Installing Dependencies
+
+```bash
 uv sync
 ```
 
-difficulty モデル
-```
+### Downloading Pre-trained Difficulty Model
+
+```bash
 cd input
 kaggle datasets download kami634/kprize-akami-difficulty-model
 unzip kprize-akami-difficulty-model.zip -d kprize-akami-difficulty-model
 ```
 
-## submit手順
-1. 変更したcodesをデータセットに反映するために、./codesにて以下コマンドを実行  
-`kaggle d version -m 'update' -r zip`
-2. submitに必要なライブラリに変更がある場合は、./deps/kprize-akami-deps.ipyngを編集し、./depsにて以下コマンドを実行  
-`kaggle k push`
-2. submit notebookをアップ・実行するために、./subにて以下コマンドを実行  
-`kaggle k push`
+## Training Environment
+
+The following machine environment was used for training:
+
+- **GPU**: NVIDIA A100 80GB
+- **Cloud**: Google Cloud
+- **Instance Type**: a2-ultragpu-1g (12 vCPU, 6 cores, 170 GB memory)
+
+## Local Training of Difficulty Model
+
+```bash
+uv run python -m local.train.exp004.run exp=70b_003
+```
+
+## Local Execution
+
+```bash
+uv run python -m local.main
+```
+
+## Submission Steps
+
+1. To reflect changes to codes in the dataset, execute the following command in the `./codes` directory
+
+   ```bash
+   kaggle d version -m 'update' -r zip
+   ```
+
+2. If there are changes to libraries required for submission, edit `./deps/kprize-akami-deps.ipynb` and execute the following command in the `./deps` directory
+
+   ```bash
+   kaggle k push
+   ```
+
+3. To upload and run the submit notebook, execute the following command in the `./sub` directory
+   ```bash
+   kaggle k push
+   ```
+
+## References
+
+- Final submission code: https://www.kaggle.com/code/kami634/kprize-akami-sub-kami?scriptVersionId=226698839
